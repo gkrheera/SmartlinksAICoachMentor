@@ -2,6 +2,7 @@
   "name": "ai-coaching-app",
   "version": "0.1.0",
   "private": true,
+  "homepage": ".",
   "dependencies": {
     "@microsoft/teams-js": "^2.22.0",
     "@supabase/supabase-js": "^2.43.5",
