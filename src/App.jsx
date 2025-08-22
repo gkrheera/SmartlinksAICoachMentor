@@ -1,9 +1,7 @@
-// /src/App.jsx
-
 import React, { useState, useEffect, useRef } from 'react';
 import { app, authentication } from '@microsoft/teams-js';
 import { supabase } from './supabaseClient';
-import { Bot, User, Send, BrainCircuit, Loader2, X, MessageSquare, BookOpen, CheckSquare, Users, GitBranch, Lightbulb, UserCheck } from 'lucide-react';
+import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Lightbulb, UserCheck } from 'lucide-react';
 
 // --- Main App Component ---
 export default function App() {
@@ -17,18 +15,18 @@ export default function App() {
             try {
                 await app.initialize();
                 const context = await app.getContext();
+                
                 const token = await authentication.getAuthToken({
-                    resources: [`api://${window.location.host}/${import.meta.env.VITE_TEAMS_APP_ID}`],
                     silent: true
                 });
 
-                // Sign in to Supabase with the Teams token
-                const { error: supabaseError } = await supabase.auth.signInWithIdToken({
+                const { data: { user }, error: supabaseError } = await supabase.auth.signInWithIdToken({
                     provider: 'azure',
                     token: token,
                 });
 
                 if (supabaseError) throw supabaseError;
+                if (!user) throw new Error("Supabase user could not be authenticated.");
 
                 setUserContext(context);
                 const savedMode = sessionStorage.getItem('appMode');
@@ -36,8 +34,8 @@ export default function App() {
                     setModeSelected(savedMode);
                 }
             } catch (e) {
-                console.error("Auth Error:", e);
-                setError("Failed to authenticate with Microsoft Teams. Please ensure you are running this app within Teams.");
+                console.error("Authentication Error:", e);
+                setError("Failed to authenticate with Microsoft Teams. Please ensure this app is running inside Teams and you have consented to its permissions.");
             } finally {
                 setLoading(false);
             }
@@ -65,15 +63,12 @@ export default function App() {
     return <MainInterface userContext={userContext} initialMode={modeSelected} onModeChange={handleModeSelect} />;
 }
 
-// --- Main Interface (Largely Unchanged) ---
+// --- Main Interface ---
 function MainInterface({ userContext, initialMode, onModeChange }) {
     const [currentMode, setCurrentMode] = useState(initialMode);
-    const [currentView, setCurrentView] = useState(initialMode === 'coach' ? 'coach' : 'chat');
-    const [chatInput, setChatInput] = useState('');
 
-    const handleNavClick = (mode, view) => {
+    const handleNavClick = (mode) => {
         setCurrentMode(mode);
-        setCurrentView(view);
         onModeChange(mode);
     };
     
@@ -92,33 +87,25 @@ function MainInterface({ userContext, initialMode, onModeChange }) {
                     </div>
                 </div>
                 <div className="flex items-center gap-1 sm:gap-2">
-                    <NavButton icon={<MessageSquare size={18}/>} label="Mentor" active={currentView === 'chat'} onClick={() => handleNavClick('mentor', 'chat')} mode="mentor" />
-                    <NavButton icon={<GitBranch size={18}/>} label="Coach" active={currentView === 'coach'} onClick={() => handleNavClick('coach', 'coach')} mode="coach" />
-                    {/* Add back other nav buttons as needed */}
+                    <NavButton icon={<MessageSquare size={18}/>} label="Mentor" active={currentMode === 'mentor'} onClick={() => handleNavClick('mentor')} mode="mentor" />
+                    <NavButton icon={<GitBranch size={18}/>} label="Coach" active={currentMode === 'coach'} onClick={() => handleNavClick('coach')} mode="coach" />
                 </div>
             </header>
             
             <div className="flex-1 overflow-y-hidden">
-                {currentView === 'chat' && <ChatInterface mode="mentor" input={chatInput} setInput={setChatInput} />}
-                {currentView === 'coach' && <ChatInterface mode="coach" />}
-                {/* Add back Framework/Action views as needed */}
+                <ChatInterface mode={currentMode} key={currentMode} />
             </div>
         </div>
     );
 }
 
 // --- Refactored Chat Interface (Combined for Coach & Mentor) ---
-function ChatInterface({ mode, input: controlledInput, setInput: setControlledInput }) {
+function ChatInterface({ mode }) {
     const [messages, setMessages] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
-    const [internalInput, setInternalInput] = useState('');
+    const [input, setInput] = useState('');
     const messagesEndRef = useRef(null);
 
-    const isControlled = controlledInput !== undefined;
-    const input = isControlled ? controlledInput : internalInput;
-    const setInput = isControlled ? setControlledInput : setInternalInput;
-    
-    // Fetch initial messages and set up realtime subscription
     useEffect(() => {
         const fetchMessages = async () => {
             const { data, error } = await supabase
@@ -130,7 +117,7 @@ function ChatInterface({ mode, input: controlledInput, setInput: setControlledIn
             if (error) {
                 console.error("Error fetching messages:", error);
             } else if (data.length === 0) {
-                const welcomeMessage = { role: 'assistant', content: mode === 'coach' ? "Hello! I'm your AI Master Coach. What would you like to work on?" : "Hello! I'm your AI Mentor. How can I help you today?" };
+                const welcomeMessage = { role: 'assistant', content: mode === 'coach' ? "Hello! I'm your AI Master Coach. What would you like to work on today?" : "Hello! I'm your AI Mentor. How can I help you today?", app_mode: mode };
                 setMessages([welcomeMessage]);
             } else {
                 setMessages(data);
@@ -138,14 +125,14 @@ function ChatInterface({ mode, input: controlledInput, setInput: setControlledIn
         };
         fetchMessages();
 
-        const subscription = supabase.channel(`messages:${mode}`)
+        const channel = supabase.channel(`messages:${mode}`)
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `app_mode=eq.${mode}` }, (payload) => {
                 setMessages((prevMessages) => [...prevMessages, payload.new]);
             })
             .subscribe();
 
         return () => {
-            supabase.removeChannel(subscription);
+            supabase.removeChannel(channel);
         };
     }, [mode]);
     
@@ -153,56 +140,55 @@ function ChatInterface({ mode, input: controlledInput, setInput: setControlledIn
 
     const getSystemPrompt = () => {
         if (mode === 'coach') {
-            return `You are a master AI coach using the ICF, ACT, and RFT frameworks...`; // Add your full coach prompt
+            return `You are a master AI coach using the ICF, ACT, and RFT frameworks. Your Primary Directive: Honor the user's stated coaching goal. Your goal is to evoke insight, not give advice.`;
         }
-        return `You are MentoraFlex AI, an expert mentor...`; // Add your full mentor prompt
+        return `You are MentoraFlex AI, an expert mentor providing clear, actionable advice based on established business and leadership frameworks.`;
     };
 
     const handleSend = async () => {
         if (input.trim() === '' || isLoading) return;
 
-        const userMessage = { role: 'user', content: input, app_mode: mode };
+        const userMessageContent = input;
         setInput('');
         setIsLoading(true);
 
-        // Immediately add user message to UI
-        setMessages(prev => [...prev, userMessage]);
+        const userMessage = { role: 'user', content: userMessageContent, app_mode: mode };
+        
+        const { error: insertError } = await supabase.from('messages').insert(userMessage);
+        if (insertError) {
+             console.error('Supabase insert error:', insertError);
+             setIsLoading(false);
+             return;
+        }
 
-        // Save user message to Supabase DB (don't wait)
-        supabase.from('messages').insert({ role: 'user', content: userMessage.content, app_mode: mode }).then(({ error }) => {
-            if (error) console.error('Supabase insert error:', error);
-        });
-
-        const history = [...messages, userMessage].slice(-10); // Send last 10 messages for context
+        const history = [...messages, userMessage].slice(-10);
 
         try {
             const response = await fetch('/.netlify/functions/callGemini', {
                 method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ history, systemPrompt: getSystemPrompt() })
             });
-            if (!response.ok) throw new Error(`Server function failed`);
+
+            if (!response.ok) throw new Error(`Server function failed with status ${response.status}`);
             
             const result = await response.json();
+            if (result.error) throw new Error(result.error);
             
-            // The AI message will be added via the realtime subscription, so we don't need to add it here.
-            // We just need to save it to the DB.
-            const { error } = await supabase.from('messages').insert({ role: 'assistant', content: result.response, app_mode: mode });
-            if (error) console.error('Supabase AI insert error:', error);
+            const { error: aiInsertError } = await supabase.from('messages').insert({ role: 'assistant', content: result.response, app_mode: mode });
+            if (aiInsertError) console.error('Supabase AI insert error:', aiInsertError);
 
         } catch (error) {
             console.error("Error calling Gemini function:", error);
-            const errorMessage = { role: 'assistant', content: "Error connecting to AI. Please try again." };
-            await supabase.from('messages').insert({ ...errorMessage, app_mode: mode });
+            await supabase.from('messages').insert({ role: 'assistant', content: `Error: ${error.message}. Please try again.`, app_mode: mode });
         } finally {
             setIsLoading(false);
         }
     };
 
     const isMentorMode = mode === 'mentor';
-    
-    // UI Styling based on mode
     const bgColor = isMentorMode ? 'bg-gray-800' : 'bg-purple-50';
-    const textColor = isMentorMode ? '' : 'text-gray-900';
+    const textColor = isMentorMode ? 'text-gray-100' : 'text-gray-900';
     const assistantIconBg = isMentorMode ? 'bg-blue-500' : 'bg-white border-2 border-purple-200';
     const assistantIcon = isMentorMode ? <Bot className="text-white" /> : <GitBranch className="text-purple-600" />;
     const userBubbleBg = isMentorMode ? 'bg-gray-700' : 'bg-purple-600 text-white';
@@ -233,7 +219,7 @@ function ChatInterface({ mode, input: controlledInput, setInput: setControlledIn
             </main>
             <footer className={`p-2 sm:p-4 ${footerBg}`}>
                 <div className={`flex items-center rounded-lg p-2 ${inputBg}`}>
-                    <input type="text" value={input} onChange={e => setInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleSend()} placeholder="Type your message..." className="flex-1 bg-transparent focus:outline-none px-2" disabled={isLoading} />
+                    <input type="text" value={input} onChange={e => setInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleSend()} placeholder="Type your message..." className={`flex-1 bg-transparent focus:outline-none px-2 ${isMentorMode ? 'text-white' : 'text-gray-800'}`} disabled={isLoading} />
                     <button onClick={handleSend} disabled={isLoading || !input.trim()} className={`p-2 ml-2 rounded-md text-white disabled:bg-gray-500 transition-colors ${sendButtonBg}`}><Send size={20} /></button>
                 </div>
             </footer>
@@ -241,7 +227,55 @@ function ChatInterface({ mode, input: controlledInput, setInput: setControlledIn
     );
 }
 
-// --- Mode Selection and Other UI Components (Unchanged) ---
-function ModeSelection({ onSelect }) { /* ... same as your original code ... */ }
-const ModeCard = ({ icon, title, description, buttonText, onClick, color }) => { /* ... same as original ... */ };
-const NavButton = ({ icon, label, active, onClick, mode }) => { /* ... same as original ... */ };
+// --- Mode Selection & UI Components (Unchanged) ---
+function ModeSelection({ onSelect }) {
+    return (
+        <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white p-4">
+            <h1 className="text-4xl font-bold mb-4 text-center">Welcome to the AI Suite</h1>
+            <p className="text-lg text-gray-400 mb-12 text-center">Choose your path for today's session.</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-4xl">
+                <ModeCard
+                    icon={<UserCheck className="h-12 w-12 text-blue-400 mb-4" />}
+                    title="AI Mentor"
+                    description="Seek guidance, get expert advice, and learn proven frameworks for your professional challenges."
+                    buttonText="Start Mentoring"
+                    onClick={() => onSelect('mentor')}
+                    color="blue"
+                />
+                <ModeCard
+                    icon={<Lightbulb className="h-12 w-12 text-purple-400 mb-4" />}
+                    title="AI Coach"
+                    description="Explore your own thinking, uncover new perspectives, and find your own solutions to complex issues."
+                    buttonText="Start Coaching"
+                    onClick={() => onSelect('coach')}
+                    color="purple"
+                />
+            </div>
+        </div>
+    );
+}
+
+const ModeCard = ({ icon, title, description, buttonText, onClick, color }) => (
+    <div className={`bg-gray-800 rounded-2xl p-8 flex flex-col items-center text-center border border-gray-700 hover:border-${color}-500 transition-all duration-300 transform hover:-translate-y-2`}>
+        {icon}
+        <h2 className="text-2xl font-bold text-white mb-3">{title}</h2>
+        <p className="text-gray-400 mb-8 flex-grow">{description}</p>
+        <button onClick={onClick} className={`w-full py-3 px-6 rounded-lg font-semibold text-white bg-${color}-600 hover:bg-${color}-700 transition-colors`}>
+            {buttonText}
+        </button>
+    </div>
+);
+
+const NavButton = ({ icon, label, active, onClick, mode }) => {
+    const mentorActive = 'bg-blue-600 text-white';
+    const coachActive = 'bg-purple-600 text-white';
+    const inactive = 'text-gray-300 hover:bg-gray-700 hover:text-white';
+    const activeClass = mode === 'mentor' ? mentorActive : coachActive;
+
+    return (
+        <button onClick={onClick} className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors ${active ? activeClass : inactive}`}>
+            {icon}
+            <span className="hidden sm:inline">{label}</span>
+        </button>
+    );
+};
