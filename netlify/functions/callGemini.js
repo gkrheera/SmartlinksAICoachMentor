@@ -1,7 +1,9 @@
-// /netlify/functions/callGemini.js
+// ======================================================================
+// FILE: netlify/functions/callGemini.js
+// ======================================================================
+const fetch = require('node-fetch');
 
-export const handler = async (event) => {
-  // Only allow POST requests
+exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
@@ -11,10 +13,9 @@ export const handler = async (event) => {
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
-      throw new Error("API key is not configured.");
+      throw new Error("Gemini API key is not configured on the server.");
     }
     
-    // Format messages for the Gemini API
     const contents = history.map(msg => ({
         role: msg.role === 'assistant' ? 'model' : 'user',
         parts: [{ text: msg.content }]
@@ -42,7 +43,7 @@ export const handler = async (event) => {
     }
 
     const result = await response.json();
-    const aiContent = result.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, I couldn't get a response.";
+    const aiContent = result.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, I couldn't get a response at the moment.";
 
     return {
         statusCode: 200,
@@ -50,7 +51,7 @@ export const handler = async (event) => {
     };
 
   } catch (error) {
-    console.error("Function Error:", error);
+    console.error("Netlify Function Error:", error);
     return {
         statusCode: 500,
         body: JSON.stringify({ error: error.message }),
