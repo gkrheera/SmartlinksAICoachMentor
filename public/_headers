@@ -1,0 +1,9 @@
+// ======================================================================
+// FILE: public/_headers (NEW FILE)
+// This file sets the correct security headers for Netlify.
+// ======================================================================
+/*
+  Content-Security-Policy:
+    connect-src 'self' https://*.supabase.co https://login.microsoftonline.com https://graph.microsoft.com data:;
+    frame-src 'self' https://*.teams.microsoft.com;
+    script-src 'self' https://cdn.tailwindcss.com;
