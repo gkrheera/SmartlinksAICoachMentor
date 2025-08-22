@@ -1,5 +1,5 @@
 // ======================================================================
-// FILE: src/App.jsx (CORRECTED)
+// FILE: src/App.jsx
 // ======================================================================
 import React, { useState, useEffect, useRef } from 'react';
 import { app, authentication } from '@microsoft/teams-js';
@@ -38,7 +38,7 @@ export default function App() {
                 }
             } catch (e) {
                 console.error("Authentication Error:", e);
-                setError("Failed to authenticate with Microsoft Teams. Please ensure this app is running inside Teams and you have consented to its permissions.");
+                setError(`Failed to authenticate with Microsoft Teams. Error: ${e.message}`);
             } finally {
                 setLoading(false);
             }
@@ -66,7 +66,7 @@ export default function App() {
     return <MainInterface userContext={userContext} initialMode={modeSelected} onModeChange={handleModeSelect} />;
 }
 
-// --- Main Interface ---
+// --- Other components remain the same ---
 function MainInterface({ userContext, initialMode, onModeChange }) {
     const [currentMode, setCurrentMode] = useState(initialMode);
 
@@ -102,7 +102,6 @@ function MainInterface({ userContext, initialMode, onModeChange }) {
     );
 }
 
-// --- Refactored Chat Interface (Combined for Coach & Mentor) ---
 function ChatInterface({ mode }) {
     const [messages, setMessages] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -222,7 +221,7 @@ function ChatInterface({ mode }) {
             </main>
             <footer className={`p-2 sm:p-4 ${footerBg}`}>
                 <div className={`flex items-center rounded-lg p-2 ${inputBg}`}>
-                    <input type="text" value={input} onChange={e => setInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleSend()} placeholder="Type your message..." className={`flex-1 bg-transparent focus:outline-none px-2 ${isMentorMode ? 'text-white' : 'text-gray-800'}`} disabled={isLoading} />
+                    <input type="text" value={input} onChange={e => setInput(e.value)} onKeyPress={e => e.key === 'Enter' && handleSend()} placeholder="Type your message..." className={`flex-1 bg-transparent focus:outline-none px-2 ${isMentorMode ? 'text-white' : 'text-gray-800'}`} disabled={isLoading} />
                     <button onClick={handleSend} disabled={isLoading || !input.trim()} className={`p-2 ml-2 rounded-md text-white disabled:bg-gray-500 transition-colors ${sendButtonBg}`}><Send size={20} /></button>
                 </div>
             </footer>
@@ -230,7 +229,6 @@ function ChatInterface({ mode }) {
     );
 }
 
-// --- Mode Selection & UI Components (Unchanged) ---
 function ModeSelection({ onSelect }) {
     return (
         <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white p-4">
