@@ -1,6 +1,4 @@
-// ======================================================================
-// FILE: netlify/functions/callGemini.js
-// ======================================================================
+
 const fetch = require('node-fetch');
 
 exports.handler = async (event) => {
