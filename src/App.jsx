@@ -1,3 +1,6 @@
+// ======================================================================
+// FILE: src/App.jsx (CORRECTED)
+// ======================================================================
 import React, { useState, useEffect, useRef } from 'react';
 import { app, authentication } from '@microsoft/teams-js';
 import { supabase } from './supabaseClient';
