@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { SignedIn, SignedOut, useUser, useAuth, useClerk } from '@clerk/clerk-react';
+import { SignedIn, SignedOut, useUser, useAuth, SignInButton } from '@clerk/clerk-react';
 import { supabase } from './supabaseClient';
 import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Lightbulb, UserCheck } from 'lucide-react';
 
@@ -9,6 +9,7 @@ function AuthenticatedApp() {
     const { getToken } = useAuth();
     const [isSupabaseReady, setIsSupabaseReady] = useState(false);
     const [modeSelected, setModeSelected] = useState(null);
+    const [supabaseError, setSupabaseError] = useState(null); // New state for error handling
 
     useEffect(() => {
         const setSupabaseSession = async () => {
@@ -16,7 +17,7 @@ function AuthenticatedApp() {
                 // Get the JWT from Clerk, using the Supabase template
                 const supabaseToken = await getToken({ template: 'supabase' });
                 if (!supabaseToken) {
-                    throw new Error("Could not get Supabase token from Clerk.");
+                    throw new Error("Could not get Supabase token from Clerk. Please ensure the Supabase JWT template is configured correctly in your Clerk dashboard.");
                 }
                 
                 // Set the session in the Supabase client
@@ -30,6 +31,7 @@ function AuthenticatedApp() {
                 setIsSupabaseReady(true);
             } catch (e) {
                 console.error("Error setting Supabase session:", e);
+                setSupabaseError(e.message); // Set the error message to be displayed
             }
         };
 
@@ -43,6 +45,17 @@ function AuthenticatedApp() {
         sessionStorage.setItem('appMode', mode);
     };
 
+    // New conditional rendering to display the error
+    if (supabaseError) {
+        return (
+            <div className="flex flex-col items-center justify-center h-screen bg-red-900 text-white p-4 text-center">
+                <h1 className="text-2xl font-bold mb-4">Error Configuring Session</h1>
+                <p>There was a problem authenticating with the backend service.</p>
+                <p className="mt-4 text-sm font-mono bg-red-800 p-2 rounded">{supabaseError}</p>
+            </div>
+        );
+    }
+
     if (!isSupabaseReady) {
         return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader2 className="animate-spin mr-2" /> Preparing session...</div>;
     }
@@ -55,23 +68,6 @@ function AuthenticatedApp() {
     return <MainInterface user={user} initialMode={modeSelected} onModeChange={handleModeSelect} />;
 }
 
-// This component will automatically redirect to the sign-in page.
-function RedirectToSignIn() {
-    const { redirectToSignIn } = useClerk();
-
-    useEffect(() => {
-        redirectToSignIn();
-    }, [redirectToSignIn]);
-
-    return (
-        <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
-            <Loader2 className="animate-spin mr-2" />
-            <p>Redirecting to sign-in...</p>
-        </div>
-    );
-}
-
-
 // This is the main entry point of the app.
 export default function App() {
     return (
@@ -81,8 +77,14 @@ export default function App() {
                 <AuthenticatedApp />
             </SignedIn>
             <SignedOut>
-                {/* If the user is signed out, automatically redirect them to sign in. */}
-                <RedirectToSignIn />
+                {/* If the user is signed out, show a simple sign-in prompt. */}
+                <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
+                    <h1 className="text-3xl font-bold mb-4">AI Coach & Mentor</h1>
+                    <p className="mb-8">Please sign in to continue.</p>
+                    <div className="bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors">
+                        <SignInButton />
+                    </div>
+                </div>
             </SignedOut>
         </>
     );
@@ -112,7 +114,7 @@ function MainInterface({ user, initialMode, onModeChange }) {
                         <p className={`text-xs ${isMentorMode ? 'text-green-400' : 'text-purple-300'}`}>Status: Active</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-1 sm-gap-2">
+                <div className="flex items-center gap-1 sm:gap-2">
                     <NavButton icon={<MessageSquare size={18}/>} label="Mentor" active={currentMode === 'mentor'} onClick={() => handleNavClick('mentor')} mode="mentor" />
                     <NavButton icon={<GitBranch size={18}/>} label="Coach" active={currentMode === 'coach'} onClick={() => handleNavClick('coach')} mode="coach" />
                 </div>
@@ -130,14 +132,10 @@ function ChatInterface({ mode }) {
     const [isLoading, setIsLoading] = useState(false);
     const [input, setInput] = useState('');
     const messagesEndRef = useRef(null);
-
-    // This effect is omitted as database logic is not part of this snippet
-    // In a real app, you would fetch and subscribe to messages from Supabase here.
     
     useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
     const handleSend = async () => {
-        // API call logic would go here
         if (input.trim() === '') return;
         console.log(`Sending message in ${mode} mode:`, input);
         setInput('');
@@ -215,7 +213,6 @@ const NavButton = ({ icon, label, active, onClick, mode }) => {
 
     return (
         <button onClick={onClick} className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors ${active ? activeClass : inactive}`}>
-            {icon}
             <span className="hidden sm:inline">{label}</span>
         </button>
     );
