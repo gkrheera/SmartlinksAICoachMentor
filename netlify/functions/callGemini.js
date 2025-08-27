@@ -1,3 +1,5 @@
+// REMOVED: const fetch = require('node-fetch'); - This line must be deleted.
+
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' };
@@ -23,7 +25,7 @@ exports.handler = async (event) => {
 
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
 
-    // This now uses the native fetch provided by the Netlify environment.
+    // This uses the native fetch provided by the Netlify environment.
     const response = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
