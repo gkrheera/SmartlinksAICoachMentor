@@ -1,40 +1,118 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { SignedIn, SignedOut, useUser, useAuth, SignInButton } from '@clerk/clerk-react';
+import { SignedIn, SignedOut, useUser, useAuth } from '@clerk/clerk-react';
 import { supabase } from './supabaseClient';
 import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Lightbulb, UserCheck } from 'lucide-react';
+import * as microsoftTeams from "@microsoft/teams-js";
 
-// This component handles the logic after a user is signed in via Clerk.
+/**
+ * The main App component handles the primary SSO logic. It detects if the
+ * app is running within Microsoft Teams and triggers the authentication
+ * flow automatically for a seamless user experience.
+ */
+export default function App({ clerk }) {
+    const [isTeams, setIsTeams] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const authTriggered = useRef(false); // Prevents multiple redirect attempts
+
+    // On component mount, initialize the Teams SDK to check the environment.
+    useEffect(() => {
+        const initialize = async () => {
+            try {
+                await microsoftTeams.app.initialize();
+                setIsTeams(true);
+            } catch (error) {
+                console.warn("App is not running in Microsoft Teams.");
+                setIsTeams(false);
+            } finally {
+                setLoading(false);
+            }
+        };
+        initialize();
+    }, []);
+
+    /**
+     * Programmatically initiates the Clerk SSO redirect flow.
+     * This uses the specific SAML strategy configured for Microsoft Entra ID.
+     */
+    const handleLogin = () => {
+        if (!clerk || authTriggered.current) return;
+        authTriggered.current = true; // Mark that we've started the auth flow
+        clerk.authenticateWithRedirect({
+            // IMPORTANT: Replace with your actual strategy name from the Clerk dashboard.
+            // It often looks like 'saml_sso_xxxxxxxxxxxx'.
+            strategy: 'saml_sso_microsoftentra', 
+            redirectUrl: '/',
+            redirectUrlComplete: '/'
+        });
+    };
+
+    // This effect triggers the login flow automatically once the app has initialized,
+    // confirmed it's in Teams, and detected the user is signed out.
+    useEffect(() => {
+        if (!loading && isTeams && clerk && !clerk.user) {
+            handleLogin();
+        }
+    }, [loading, isTeams, clerk]);
+
+
+    if (loading) {
+        return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader2 className="animate-spin mr-2" /> Initializing App...</div>;
+    }
+
+    return (
+        <>
+            <SignedIn>
+                <AuthenticatedApp />
+            </SignedIn>
+            <SignedOut>
+                <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
+                    <h1 className="text-3xl font-bold mb-4">AI Coach & Mentor</h1>
+                    {isTeams ? (
+                        <p className="mb-8">Please wait, attempting to sign you in automatically...</p>
+                    ) : (
+                        <>
+                            <p className="mb-8">Please sign in to continue.</p>
+                            <button onClick={handleLogin} className="bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors">
+                                Sign In
+                            </button>
+                        </>
+                    )}
+                </div>
+            </SignedOut>
+        </>
+    );
+}
+
+/**
+ * This component renders only when the user is authenticated.
+ * It handles the Supabase session setup after Clerk has signed the user in.
+ */
 function AuthenticatedApp() {
     const { user } = useUser();
     const { getToken } = useAuth();
     const [isSupabaseReady, setIsSupabaseReady] = useState(false);
     const [modeSelected, setModeSelected] = useState(null);
-    const [supabaseError, setSupabaseError] = useState(null); // New state for error handling
+    const [supabaseError, setSupabaseError] = useState(null);
 
     useEffect(() => {
         const setSupabaseSession = async () => {
             try {
-                // Get the JWT from Clerk, using the Supabase template
                 const supabaseToken = await getToken({ template: 'supabase' });
                 if (!supabaseToken) {
                     throw new Error("Could not get Supabase token from Clerk. Please ensure the Supabase JWT template is configured correctly in your Clerk dashboard.");
                 }
-                
-                // Set the session in the Supabase client
                 const { error } = await supabase.auth.setSession({
                     access_token: supabaseToken,
                 });
-
                 if (error) {
                     throw error;
                 }
                 setIsSupabaseReady(true);
             } catch (e) {
                 console.error("Error setting Supabase session:", e);
-                setSupabaseError(e.message); // Set the error message to be displayed
+                setSupabaseError(e.message);
             }
         };
-
         if (user) {
             setSupabaseSession();
         }
@@ -45,7 +123,6 @@ function AuthenticatedApp() {
         sessionStorage.setItem('appMode', mode);
     };
 
-    // New conditional rendering to display the error
     if (supabaseError) {
         return (
             <div className="flex flex-col items-center justify-center h-screen bg-red-900 text-white p-4 text-center">
@@ -64,44 +141,21 @@ function AuthenticatedApp() {
         return <ModeSelection onSelect={handleModeSelect} />;
     }
 
-    // Pass the authenticated user object from Clerk to the MainInterface
     return <MainInterface user={user} initialMode={modeSelected} onModeChange={handleModeSelect} />;
 }
 
-// This is the main entry point of the app.
-export default function App() {
-    return (
-        <>
-            <SignedIn>
-                {/* If the user is signed in, render the main application */}
-                <AuthenticatedApp />
-            </SignedIn>
-            <SignedOut>
-                {/* If the user is signed out, show a simple sign-in prompt. */}
-                <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
-                    <h1 className="text-3xl font-bold mb-4">AI Coach & Mentor</h1>
-                    <p className="mb-8">Please sign in to continue.</p>
-                    <div className="bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors">
-                        <SignInButton />
-                    </div>
-                </div>
-            </SignedOut>
-        </>
-    );
-}
-
-// --- UI Components ---
-
+/**
+ * The main user interface, including the header and chat area.
+ */
 function MainInterface({ user, initialMode, onModeChange }) {
     const [currentMode, setCurrentMode] = useState(initialMode);
-    
+
     const handleNavClick = (mode) => {
         setCurrentMode(mode);
         onModeChange(mode);
     };
-    
-    const isMentorMode = currentMode === 'mentor';
 
+    const isMentorMode = currentMode === 'mentor';
     return (
         <div className={`flex flex-col h-screen text-gray-100 font-sans ${isMentorMode ? 'bg-gray-800' : 'bg-purple-900'}`}>
             <header className={`p-4 border-b flex items-center justify-between ${isMentorMode ? 'bg-gray-900 border-gray-700' : 'bg-purple-950 border-purple-800'}`}>
@@ -119,7 +173,6 @@ function MainInterface({ user, initialMode, onModeChange }) {
                     <NavButton icon={<GitBranch size={18}/>} label="Coach" active={currentMode === 'coach'} onClick={() => handleNavClick('coach')} mode="coach" />
                 </div>
             </header>
-            
             <div className="flex-1 overflow-y-hidden">
                 <ChatInterface mode={currentMode} key={currentMode} />
             </div>
@@ -127,25 +180,28 @@ function MainInterface({ user, initialMode, onModeChange }) {
     );
 }
 
+/**
+ * The chat interface component where users interact with the AI.
+ * (Further implementation for sending/receiving messages is needed here).
+ */
 function ChatInterface({ mode }) {
     const [messages, setMessages] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [input, setInput] = useState('');
     const messagesEndRef = useRef(null);
-    
+
     useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
     const handleSend = async () => {
         if (input.trim() === '') return;
         console.log(`Sending message in ${mode} mode:`, input);
+        // TODO: Implement API call to Netlify function and update state
         setInput('');
     };
 
     const isMentorMode = mode === 'mentor';
     const bgColor = isMentorMode ? 'bg-gray-800' : 'bg-purple-50';
     const textColor = isMentorMode ? 'text-gray-100' : 'text-gray-900';
-    const assistantIconBg = isMentorMode ? 'bg-blue-500' : 'bg-white border-2 border-purple-200';
-    const assistantIcon = isMentorMode ? <Bot className="text-white" /> : <GitBranch className="text-purple-600" />;
     const userBubbleBg = isMentorMode ? 'bg-gray-700' : 'bg-purple-600 text-white';
     const assistantBubbleBg = isMentorMode ? 'bg-gray-900 border border-gray-700' : 'bg-purple-100 text-purple-900';
     const footerBg = isMentorMode ? 'bg-gray-900 border-t border-gray-700' : 'bg-white border-t border-gray-200';
@@ -155,7 +211,7 @@ function ChatInterface({ mode }) {
     return (
         <div className={`flex flex-col h-full ${bgColor} ${textColor}`}>
             <main className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
-                {/* Message mapping would go here */}
+                {/* Message mapping will go here */}
             </main>
             <footer className={`p-2 sm:p-4 ${footerBg}`}>
                 <div className={`flex items-center rounded-lg p-2 ${inputBg}`}>
@@ -167,6 +223,9 @@ function ChatInterface({ mode }) {
     );
 }
 
+/**
+ * The initial screen where the user chooses between "Mentor" and "Coach" mode.
+ */
 function ModeSelection({ onSelect }) {
     return (
         <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white p-4">
@@ -210,7 +269,6 @@ const NavButton = ({ icon, label, active, onClick, mode }) => {
     const coachActive = 'bg-purple-600 text-white';
     const inactive = 'text-gray-300 hover:bg-gray-700 hover:text-white';
     const activeClass = mode === 'mentor' ? mentorActive : coachActive;
-
     return (
         <button onClick={onClick} className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors ${active ? activeClass : inactive}`}>
             <span className="hidden sm:inline">{label}</span>
