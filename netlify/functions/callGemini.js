@@ -1,6 +1,3 @@
-
-const fetch = require('node-fetch');
-
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' };
@@ -13,7 +10,7 @@ exports.handler = async (event) => {
     if (!apiKey) {
       throw new Error("Gemini API key is not configured on the server.");
     }
-    
+
     const contents = history.map(msg => ({
         role: msg.role === 'assistant' ? 'model' : 'user',
         parts: [{ text: msg.content }]
@@ -21,13 +18,12 @@ exports.handler = async (event) => {
 
     const payload = {
         contents,
-        systemInstruction: {
-            parts: [{ text: systemPrompt }]
-        }
+        systemInstruction: { parts: [{ text: systemPrompt }] }
     };
 
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
 
+    // This now uses the native fetch provided by the Netlify environment.
     const response = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -41,13 +37,12 @@ exports.handler = async (event) => {
     }
 
     const result = await response.json();
-    const aiContent = result.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, I couldn't get a response at the moment.";
+    const aiContent = result.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, I couldn't get a response.";
 
     return {
         statusCode: 200,
         body: JSON.stringify({ response: aiContent }),
     };
-
   } catch (error) {
     console.error("Netlify Function Error:", error);
     return {
