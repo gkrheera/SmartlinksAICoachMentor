@@ -1,8 +1,5 @@
-// ======================================================================
-// FILE: src/App.jsx (Complete Version)
-// ======================================================================
 import React, { useState, useEffect, useRef } from 'react';
-import { SignedIn, SignedOut, useUser, useAuth } from '@clerk/clerk-react';
+import { SignedIn, SignedOut, useUser, useAuth, useClerk } from '@clerk/clerk-react';
 import { supabase } from './supabaseClient';
 import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Lightbulb, UserCheck } from 'lucide-react';
 
@@ -58,6 +55,23 @@ function AuthenticatedApp() {
     return <MainInterface user={user} initialMode={modeSelected} onModeChange={handleModeSelect} />;
 }
 
+// This component will automatically redirect to the sign-in page.
+function RedirectToSignIn() {
+    const { redirectToSignIn } = useClerk();
+
+    useEffect(() => {
+        redirectToSignIn();
+    }, [redirectToSignIn]);
+
+    return (
+        <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
+            <Loader2 className="animate-spin mr-2" />
+            <p>Redirecting to sign-in...</p>
+        </div>
+    );
+}
+
+
 // This is the main entry point of the app.
 export default function App() {
     return (
@@ -67,12 +81,8 @@ export default function App() {
                 <AuthenticatedApp />
             </SignedIn>
             <SignedOut>
-                {/* If the user is signed out, show a simple sign-in prompt.
-                    Clerk will handle the redirect to Microsoft automatically. */}
-                <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
-                    <h1 className="text-3xl font-bold mb-4">AI Coach & Mentor</h1>
-                    <p>Please sign in to continue.</p>
-                </div>
+                {/* If the user is signed out, automatically redirect them to sign in. */}
+                <RedirectToSignIn />
             </SignedOut>
         </>
     );
@@ -102,7 +112,7 @@ function MainInterface({ user, initialMode, onModeChange }) {
                         <p className={`text-xs ${isMentorMode ? 'text-green-400' : 'text-purple-300'}`}>Status: Active</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-1 sm:gap-2">
+                <div className="flex items-center gap-1 sm-gap-2">
                     <NavButton icon={<MessageSquare size={18}/>} label="Mentor" active={currentMode === 'mentor'} onClick={() => handleNavClick('mentor')} mode="mentor" />
                     <NavButton icon={<GitBranch size={18}/>} label="Coach" active={currentMode === 'coach'} onClick={() => handleNavClick('coach')} mode="coach" />
                 </div>
