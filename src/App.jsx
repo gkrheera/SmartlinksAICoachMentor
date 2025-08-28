@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { SignedIn, SignedOut, useUser, useAuth } from '@clerk/clerk-react';
+import { SignedIn, SignedOut, useUser, useAuth, useClerk } from '@clerk/clerk-react'; // Import useClerk
 import { supabase } from './supabaseClient';
 import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Lightbulb, UserCheck } from 'lucide-react';
 import * as microsoftTeams from "@microsoft/teams-js";
@@ -9,12 +9,12 @@ import * as microsoftTeams from "@microsoft/teams-js";
  * app is running within Microsoft Teams and triggers the authentication
  * flow automatically for a seamless user experience.
  */
-export default function App({ clerk }) {
+export default function App() { // Removed clerk prop
+    const { authenticateWithRedirect } = useClerk(); // Use the hook here
     const [isTeams, setIsTeams] = useState(false);
     const [loading, setLoading] = useState(true);
-    const authTriggered = useRef(false); // Prevents multiple redirect attempts
+    const authTriggered = useRef(false);
 
-    // On component mount, initialize the Teams SDK to check the environment.
     useEffect(() => {
         const initialize = async () => {
             try {
@@ -30,28 +30,22 @@ export default function App({ clerk }) {
         initialize();
     }, []);
 
-    /**
-     * Programmatically initiates the Clerk SSO redirect flow.
-     * This uses the specific SAML strategy configured for Microsoft Entra ID.
-     */
     const handleLogin = () => {
-        if (!clerk || authTriggered.current) return;
-        authTriggered.current = true; // Mark that we've started the auth flow
-        clerk.authenticateWithRedirect({
-            // This is the specific Connection ID for your SAML SSO provider from the Clerk dashboard URL.
+        if (authTriggered.current) return;
+        authTriggered.current = true;
+        authenticateWithRedirect({ // Call the function from the hook
             strategy: 'samlc_31s6ytG1tvCOO2UKzOvumyLDd0X', 
             redirectUrl: '/',
             redirectUrlComplete: '/'
         });
     };
 
-    // This effect triggers the login flow automatically once the app has initialized,
-    // confirmed it's in Teams, and detected the user is signed out.
     useEffect(() => {
-        if (!loading && isTeams && clerk && !clerk.user) {
+        // We need to check if authenticateWithRedirect is available before calling it
+        if (!loading && isTeams && typeof authenticateWithRedirect === 'function') {
             handleLogin();
         }
-    }, [loading, isTeams, clerk]);
+    }, [loading, isTeams, authenticateWithRedirect]);
 
 
     if (loading) {
@@ -82,6 +76,7 @@ export default function App({ clerk }) {
     );
 }
 
+// ... The rest of the file (AuthenticatedApp, MainInterface, etc.) remains unchanged ...
 /**
  * This component renders only when the user is authenticated.
  * It handles the Supabase session setup after Clerk has signed the user in.
