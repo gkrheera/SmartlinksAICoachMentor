@@ -214,7 +214,7 @@ function ChatInterface({ mode }) {
             </main>
             <footer className={`p-2 sm:p-4 ${footerBg}`}>
                 <div className={`flex items-center rounded-lg p-2 ${inputBg}`}>
-                    <input type="text" value={input} onChange={e => setInput(e.g.,t.value)} onKeyPress={e => e.key === 'Enter' && handleSend()} placeholder="Type your message..." className={`flex-1 bg-transparent focus:outline-none px-2 ${isMentorMode ? 'text-white' : 'text-gray-800'}`} disabled={isLoading} />
+                    <input type="text" value={input} onChange={e => setInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleSend()} placeholder="Type your message..." className={`flex-1 bg-transparent focus:outline-none px-2 ${isMentorMode ? 'text-white' : 'text-gray-800'}`} disabled={isLoading} />
                     <button onClick={handleSend} disabled={isLoading || !input.trim()} className={`p-2 ml-2 rounded-md text-white disabled:bg-gray-500 transition-colors ${sendButtonBg}`}><Send size={20} /></button>
                 </div>
             </footer>
