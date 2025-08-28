@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { SignedIn, SignedOut, useUser, useAuth, useClerk } from '@clerk/clerk-react';
 import { supabase } from './supabaseClient';
 import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Lightbulb, UserCheck } from 'lucide-react';
@@ -10,7 +10,7 @@ import * as microsoftTeams from "@microsoft/teams-js";
  * flow automatically for a seamless user experience.
  */
 export default function App() {
-    const { authenticateWithRedirect, isLoaded } = useClerk(); // Get the isLoaded flag from useClerk
+    const { authenticateWithRedirect, isLoaded } = useClerk();
     const [isTeams, setIsTeams] = useState(false);
     const [loading, setLoading] = useState(true);
     const authTriggered = useRef(false);
@@ -30,7 +30,9 @@ export default function App() {
         initialize();
     }, []);
 
-    const handleLogin = () => {
+    // Wrap handleLogin in useCallback to stabilize its identity.
+    // This prevents it from being recreated on every render, fixing the race condition.
+    const handleLogin = useCallback(() => {
         if (authTriggered.current) return;
         authTriggered.current = true;
         authenticateWithRedirect({
@@ -38,14 +40,14 @@ export default function App() {
             redirectUrl: '/',
             redirectUrlComplete: '/'
         });
-    };
+    }, [authenticateWithRedirect]);
 
-    // This effect now waits for BOTH the Teams SDK and the Clerk SDK to be fully loaded.
+    // This effect now has a stable handleLogin dependency.
     useEffect(() => {
         if (!loading && isLoaded && isTeams) {
             handleLogin();
         }
-    }, [loading, isLoaded, isTeams, authenticateWithRedirect]);
+    }, [loading, isLoaded, isTeams, handleLogin]);
 
 
     if (loading || !isLoaded) { // Show loading indicator until both are ready
