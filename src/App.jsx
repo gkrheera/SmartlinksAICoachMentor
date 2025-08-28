@@ -38,9 +38,8 @@ export default function App({ clerk }) {
         if (!clerk || authTriggered.current) return;
         authTriggered.current = true; // Mark that we've started the auth flow
         clerk.authenticateWithRedirect({
-            // IMPORTANT: Replace with your actual strategy name from the Clerk dashboard.
-            // It often looks like 'saml_sso_xxxxxxxxxxxx'.
-            strategy: 'saml_sso_microsoftentra', 
+            // This is the specific Connection ID for your SAML SSO provider from the Clerk dashboard URL.
+            strategy: 'samlc_31s6ytG1tvCOO2UKzOvumyLDd0X', 
             redirectUrl: '/',
             redirectUrlComplete: '/'
         });
@@ -215,7 +214,7 @@ function ChatInterface({ mode }) {
             </main>
             <footer className={`p-2 sm:p-4 ${footerBg}`}>
                 <div className={`flex items-center rounded-lg p-2 ${inputBg}`}>
-                    <input type="text" value={input} onChange={e => setInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleSend()} placeholder="Type your message..." className={`flex-1 bg-transparent focus:outline-none px-2 ${isMentorMode ? 'text-white' : 'text-gray-800'}`} disabled={isLoading} />
+                    <input type="text" value={input} onChange={e => setInput(e.g.,t.value)} onKeyPress={e => e.key === 'Enter' && handleSend()} placeholder="Type your message..." className={`flex-1 bg-transparent focus:outline-none px-2 ${isMentorMode ? 'text-white' : 'text-gray-800'}`} disabled={isLoading} />
                     <button onClick={handleSend} disabled={isLoading || !input.trim()} className={`p-2 ml-2 rounded-md text-white disabled:bg-gray-500 transition-colors ${sendButtonBg}`}><Send size={20} /></button>
                 </div>
             </footer>
