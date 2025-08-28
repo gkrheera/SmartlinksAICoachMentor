@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { SignedIn, SignedOut, useUser, useAuth, useClerk } from '@clerk/clerk-react'; // Import useClerk
+import { SignedIn, SignedOut, useUser, useAuth, useClerk } from '@clerk/clerk-react';
 import { supabase } from './supabaseClient';
 import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Lightbulb, UserCheck } from 'lucide-react';
 import * as microsoftTeams from "@microsoft/teams-js";
@@ -9,8 +9,8 @@ import * as microsoftTeams from "@microsoft/teams-js";
  * app is running within Microsoft Teams and triggers the authentication
  * flow automatically for a seamless user experience.
  */
-export default function App() { // Removed clerk prop
-    const { authenticateWithRedirect } = useClerk(); // Use the hook here
+export default function App() {
+    const { authenticateWithRedirect, isLoaded } from useClerk(); // Get the isLoaded flag from useClerk
     const [isTeams, setIsTeams] = useState(false);
     const [loading, setLoading] = useState(true);
     const authTriggered = useRef(false);
@@ -33,22 +33,22 @@ export default function App() { // Removed clerk prop
     const handleLogin = () => {
         if (authTriggered.current) return;
         authTriggered.current = true;
-        authenticateWithRedirect({ // Call the function from the hook
+        authenticateWithRedirect({
             strategy: 'samlc_31s6ytG1tvCOO2UKzOvumyLDd0X', 
             redirectUrl: '/',
             redirectUrlComplete: '/'
         });
     };
 
+    // This effect now waits for BOTH the Teams SDK and the Clerk SDK to be fully loaded.
     useEffect(() => {
-        // We need to check if authenticateWithRedirect is available before calling it
-        if (!loading && isTeams && typeof authenticateWithRedirect === 'function') {
+        if (!loading && isLoaded && isTeams) {
             handleLogin();
         }
-    }, [loading, isTeams, authenticateWithRedirect]);
+    }, [loading, isLoaded, isTeams, authenticateWithRedirect]);
 
 
-    if (loading) {
+    if (loading || !isLoaded) { // Show loading indicator until both are ready
         return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader2 className="animate-spin mr-2" /> Initializing App...</div>;
     }
 
@@ -76,7 +76,6 @@ export default function App() { // Removed clerk prop
     );
 }
 
-// ... The rest of the file (AuthenticatedApp, MainInterface, etc.) remains unchanged ...
 /**
  * This component renders only when the user is authenticated.
  * It handles the Supabase session setup after Clerk has signed the user in.
