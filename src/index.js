@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { ClerkProvider, useClerk } from '@clerk/clerk-react';
+import { ClerkProvider } from '@clerk/clerk-react';
 import './index.css';
 import App from './App';
 
@@ -13,21 +13,12 @@ if (!publishableKey) {
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
-/**
- * A wrapper component that allows the main App component to access the
- * Clerk instance via props. This is necessary for using headless functions
- * like `clerk.authenticateWithRedirect`.
- */
-const AppWrapper = () => {
-  const clerk = useClerk();
-  return <App clerk={clerk} />;
-};
-
 // Render the application with the ClerkProvider at the top level.
+// The App component will now use the useClerk hook directly.
 root.render(
   <React.StrictMode>
     <ClerkProvider publishableKey={publishableKey}>
-      <AppWrapper />
+      <App />
     </ClerkProvider>
   </React.StrictMode>
 );
