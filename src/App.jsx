@@ -10,7 +10,7 @@ import * as microsoftTeams from "@microsoft/teams-js";
  * flow automatically for a seamless user experience.
  */
 export default function App() {
-    const { authenticateWithRedirect, isLoaded } from useClerk(); // Get the isLoaded flag from useClerk
+    const { authenticateWithRedirect, isLoaded } = useClerk(); // Get the isLoaded flag from useClerk
     const [isTeams, setIsTeams] = useState(false);
     const [loading, setLoading] = useState(true);
     const authTriggered = useRef(false);
