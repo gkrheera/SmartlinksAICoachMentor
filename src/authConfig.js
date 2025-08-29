@@ -49,3 +49,4 @@ export const loginRequest = {
 export const apiRequest = {
     scopes: [`api://${clientId}/access_as_user`]
 };
+
