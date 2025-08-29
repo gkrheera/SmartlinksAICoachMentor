@@ -124,7 +124,6 @@ function AuthenticatedApp() {
     return <MainInterface user={user} initialMode={modeSelected} onModeChange={handleModeSelect} />;
 }
 
-
 function MainInterface({ user, initialMode, onModeChange }) {
     const [currentMode, setCurrentMode] = useState(initialMode);
 
@@ -245,3 +244,4 @@ const NavButton = ({ icon, label, active, onClick, mode }) => {
         </button>
     );
 };
+
