@@ -16,3 +16,4 @@ root.render(
     </MsalProvider>
   </React.StrictMode>
 );
+
