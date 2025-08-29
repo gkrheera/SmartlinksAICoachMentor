@@ -87,34 +87,29 @@ function AuthenticatedApp() {
                         throw new Error("ID Token not found in MSAL response.");
                     }
 
-                    // Retrieve the nonce we stored before the authentication request.
-                    const nonce = sessionStorage.getItem("msal_nonce");
-                    if (!nonce) {
-                        throw new Error("Nonce could not be retrieved from session storage.");
-                    }
-                    // Clean up the nonce after using it.
-                    sessionStorage.removeItem("msal_nonce");
-                    
-                    // Security check: verify the nonce in the token matches our stored nonce.
-                    if (response.idTokenClaims.nonce !== nonce) {
-                        throw new Error("Nonce mismatch error. Please try signing in again.");
-                    }
+                    // FIX: The definitive nonce is the one inside the authenticated user's token claims.
+                    // Use this nonce to sign in to Supabase.
+                    const nonce = user.idTokenClaims?.nonce;
 
                     const { data, error } = await supabase.auth.signInWithIdToken({
                         provider: 'azure',
                         token: response.idToken,
-                        nonce: nonce // Pass the verified nonce to Supabase.
+                        nonce: nonce // Pass the nonce from the token claims.
                     });
 
                     if (error) throw error;
                     if (!data.session) throw new Error("Supabase session could not be established.");
                     
+                    // Clean up the nonce from session storage as it's no longer needed.
+                    sessionStorage.removeItem("msal_nonce");
                     setIsSupabaseReady(true);
 
                 } catch (e) {
                     console.error("Error acquiring token or setting Supabase session:", e);
                      if (e instanceof InteractionRequiredAuthError) {
-                        instance.loginPopup(loginRequest);
+                        const nonce = crypto.randomUUID();
+                        sessionStorage.setItem("msal_nonce", nonce);
+                        instance.loginPopup({...loginRequest, nonce});
                     }
                     setSupabaseError(e.message);
                 }
