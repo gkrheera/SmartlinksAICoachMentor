@@ -4,7 +4,7 @@ import { InteractionStatus, InteractionRequiredAuthError } from '@azure/msal-bro
 import { supabase } from './supabaseClient';
 import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Lightbulb, UserCheck } from 'lucide-react';
 import * as microsoftTeams from "@microsoft/teams-js";
-import { loginRequest } from './authConfig';
+import { loginRequest, apiRequest } from './authConfig';
 
 /**
  * Generates a raw nonce and a SHA-256 hashed version of it.
@@ -168,6 +168,7 @@ function AuthenticatedApp() {
 }
 
 function MainInterface({ user, initialMode, onModeChange }) {
+    const { instance } = useMsal();
     const [currentMode, setCurrentMode] = useState(initialMode);
 
     const handleNavClick = (mode) => {
@@ -194,24 +195,67 @@ function MainInterface({ user, initialMode, onModeChange }) {
                 </div>
             </header>
             <div className="flex-1 overflow-y-hidden">
-                <ChatInterface mode={currentMode} key={currentMode} />
+                <ChatInterface mode={currentMode} user={user} instance={instance} key={currentMode} />
             </div>
         </div>
     );
 }
 
-function ChatInterface({ mode }) {
+function ChatInterface({ mode, user, instance }) {
     const [messages, setMessages] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [input, setInput] = useState('');
     const messagesEndRef = useRef(null);
 
-    useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+    useEffect(() => { 
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); 
+    }, [messages]);
 
     const handleSend = async () => {
-        if (input.trim() === '') return;
-        console.log(`Sending message in ${mode} mode:`, input);
+        if (input.trim() === '' || isLoading) return;
+
+        const newMessage = { role: 'user', content: input };
+        setMessages(prev => [...prev, newMessage]);
         setInput('');
+        setIsLoading(true);
+
+        try {
+            // Acquire access token to authorize the call to the Netlify function
+            const tokenResponse = await instance.acquireTokenSilent({
+                ...apiRequest,
+                account: user
+            });
+
+            const systemPrompt = mode === 'mentor' 
+                ? 'You are an AI Mentor. Provide expert advice and proven frameworks.'
+                : 'You are an AI Coach. Help the user explore their own thinking and find their own solutions.';
+
+            const response = await fetch('/.netlify/functions/callGemini', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${tokenResponse.accessToken}`
+                },
+                body: JSON.stringify({ 
+                    history: [...messages, newMessage], 
+                    systemPrompt 
+                })
+            });
+
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.error || 'Failed to get a response from the AI.');
+            }
+
+            const data = await response.json();
+            setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
+
+        } catch (error) {
+            console.error(`Error in ${mode} mode:`, error);
+            setMessages(prev => [...prev, { role: 'assistant', content: `Sorry, there was an error: ${error.message}` }]);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const isMentorMode = mode === 'mentor';
@@ -226,7 +270,34 @@ function ChatInterface({ mode }) {
     return (
         <div className={`flex flex-col h-full ${bgColor} ${textColor}`}>
             <main className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
-                {/* Message mapping will go here */}
+                {messages.map((msg, index) => (
+                    <div key={index} className={`flex items-start gap-3 ${msg.role === 'user' ? 'justify-end' : ''}`}>
+                        {msg.role === 'assistant' && (
+                            <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${isMentorMode ? 'bg-blue-500' : 'bg-purple-200'}`}>
+                                {isMentorMode ? <Bot className="text-white" size={20} /> : <GitBranch className="text-purple-600" size={20} />}
+                            </div>
+                        )}
+                        <div className={`max-w-xs md:max-w-md lg:max-w-lg px-4 py-2 rounded-xl ${msg.role === 'user' ? userBubbleBg : assistantBubbleBg}`}>
+                            <p className="text-sm">{msg.content}</p>
+                        </div>
+                        {msg.role === 'user' && (
+                            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center">
+                                <User className="text-white" size={20} />
+                            </div>
+                        )}
+                    </div>
+                ))}
+                {isLoading && (
+                    <div className="flex items-start gap-3">
+                        <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${isMentorMode ? 'bg-blue-500' : 'bg-purple-200'}`}>
+                            {isMentorMode ? <Bot className="text-white" size={20} /> : <GitBranch className="text-purple-600" size={20} />}
+                        </div>
+                        <div className={`max-w-xs md:max-w-md lg:max-w-lg px-4 py-2 rounded-xl ${assistantBubbleBg}`}>
+                            <Loader2 className="animate-spin" />
+                        </div>
+                    </div>
+                )}
+                 <div ref={messagesEndRef} />
             </main>
             <footer className={`p-2 sm:p-4 ${footerBg}`}>
                 <div className={`flex items-center rounded-lg p-2 ${inputBg}`}>
