@@ -77,9 +77,14 @@ function AuthenticatedApp() {
                         throw new Error("ID Token not found in MSAL response.");
                     }
 
+                    // FIX: Extract the nonce from the ID token claims.
+                    // The nonce is required by Supabase to prevent replay attacks.
+                    const nonce = response.idTokenClaims.nonce;
+
                     const { data, error } = await supabase.auth.signInWithIdToken({
                         provider: 'azure',
                         token: response.idToken,
+                        nonce: nonce // Pass the nonce to Supabase for verification.
                     });
 
                     if (error) throw error;
@@ -90,7 +95,7 @@ function AuthenticatedApp() {
                 } catch (e) {
                     console.error("Error acquiring token or setting Supabase session:", e);
                      if (e instanceof InteractionRequiredAuthError) {
-                        instance.acquireTokenPopup(loginRequest);
+                        instance.loginPopup(loginRequest);
                     }
                     setSupabaseError(e.message);
                 }
