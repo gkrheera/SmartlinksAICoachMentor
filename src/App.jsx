@@ -6,6 +6,26 @@ import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Light
 import * as microsoftTeams from "@microsoft/teams-js";
 import { loginRequest } from './authConfig';
 
+/**
+ * Generates a raw nonce and a SHA-256 hashed version of it.
+ * The hashed nonce is sent to Azure AD during the authentication request.
+ * The raw nonce is sent to Supabase for verification.
+ * @returns {Promise<{nonce: string, hashedNonce: string}>}
+ */
+async function generateNoncePair() {
+    // Generate a random nonce
+    const nonce = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
+ 
+    // Hash the nonce for Azure authentication using the Web Crypto API
+    const encoder = new TextEncoder();
+    const encodedNonce = encoder.encode(nonce);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', encodedNonce);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashedNonce = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+ 
+    return { nonce, hashedNonce };
+}
+
 export default function App() {
     const { instance, inProgress } = useMsal();
     const [isTeams, setIsTeams] = useState(false);
@@ -21,21 +41,24 @@ export default function App() {
         if (isTeams && !authAttempted && inProgress === InteractionStatus.None) {
             setAuthAttempted(true);
 
-            // Generate and store a nonce in session storage to use for the auth request.
-            const nonce = crypto.randomUUID();
-            sessionStorage.setItem("msal_nonce", nonce);
-            
-            const request = {
-                ...loginRequest,
-                nonce: nonce,
-            };
-
-            instance.ssoSilent(request).catch((error) => {
-                console.warn("SSO Silent failed, attempting popup:", error);
-                instance.loginPopup(request).catch(e => {
-                    console.error("Popup login failed:", e);
+            const performSso = async () => {
+                const { nonce, hashedNonce } = await generateNoncePair();
+                // Store the UNHASHED nonce for Supabase verification later.
+                sessionStorage.setItem("msal_nonce", nonce);
+                
+                const request = {
+                    ...loginRequest,
+                    nonce: hashedNonce, // Use the HASHED nonce for the MSAL request.
+                };
+    
+                instance.ssoSilent(request).catch((error) => {
+                    console.warn("SSO Silent failed, attempting popup:", error);
+                    instance.loginPopup(request).catch(e => {
+                        console.error("Popup login failed:", e);
+                    });
                 });
-            });
+            };
+            performSso();
         }
     }, [isTeams, inProgress, instance, authAttempted]);
 
@@ -86,30 +109,31 @@ function AuthenticatedApp() {
                     if (!response.idToken) {
                         throw new Error("ID Token not found in MSAL response.");
                     }
-
-                    // FIX: The definitive nonce is the one inside the authenticated user's token claims.
-                    // Use this nonce to sign in to Supabase.
-                    const nonce = user.idTokenClaims?.nonce;
+                    
+                    // Retrieve the original UNHASHED nonce from session storage.
+                    const nonce = sessionStorage.getItem("msal_nonce");
+                    if (!nonce) {
+                        throw new Error("Nonce could not be retrieved from session storage.");
+                    }
+                    sessionStorage.removeItem("msal_nonce");
 
                     const { data, error } = await supabase.auth.signInWithIdToken({
                         provider: 'azure',
                         token: response.idToken,
-                        nonce: nonce // Pass the nonce from the token claims.
+                        nonce: nonce // Pass the UNHASHED nonce to Supabase.
                     });
 
                     if (error) throw error;
                     if (!data.session) throw new Error("Supabase session could not be established.");
                     
-                    // Clean up the nonce from session storage as it's no longer needed.
-                    sessionStorage.removeItem("msal_nonce");
                     setIsSupabaseReady(true);
 
                 } catch (e) {
                     console.error("Error acquiring token or setting Supabase session:", e);
                      if (e instanceof InteractionRequiredAuthError) {
-                        const nonce = crypto.randomUUID();
+                        const { nonce, hashedNonce } = await generateNoncePair();
                         sessionStorage.setItem("msal_nonce", nonce);
-                        instance.loginPopup({...loginRequest, nonce});
+                        instance.loginPopup({...loginRequest, nonce: hashedNonce});
                     }
                     setSupabaseError(e.message);
                 }
