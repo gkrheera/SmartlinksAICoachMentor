@@ -7,29 +7,44 @@ import * as microsoftTeams from "@microsoft/teams-js";
 import { loginRequest, apiRequest } from './authConfig';
 
 export default function App() {
-    const { instance, inProgress } = useMsal();
+    const { instance, inProgress, accounts } = useMsal();
     const [isTeams, setIsTeams] = useState(false);
-    const [authAttempted, setAuthAttempted] = useState(false);
+    const authAttempted = useRef(false);
 
+    // This effect handles the initial authentication handshake
     useEffect(() => {
-        microsoftTeams.app.initialize().then(() => {
-            setIsTeams(true);
-        }).catch(() => setIsTeams(false));
-    }, []);
+        const handleAuth = async () => {
+            if (isTeams && !authAttempted.current && inProgress === InteractionStatus.None && accounts.length === 0) {
+                authAttempted.current = true;
+                try {
+                    // First, try a silent SSO request
+                    await instance.ssoSilent(loginRequest);
+                } catch (error) {
+                    console.warn("SSO Silent failed, initiating redirect.", error);
+                    // If silent fails, initiate the redirect flow
+                    instance.loginRedirect(loginRequest);
+                }
+            }
+        };
 
-    useEffect(() => {
-        if (isTeams && !authAttempted && inProgress === InteractionStatus.None) {
-            setAuthAttempted(true);
-            instance.ssoSilent(loginRequest).catch((error) => {
-                console.warn("SSO Silent failed, attempting popup:", error);
-                instance.loginPopup(loginRequest).catch(e => {
-                    console.error("Popup login failed:", e);
-                });
-            });
-        }
-    }, [isTeams, inProgress, instance, authAttempted]);
+        const initializeTeams = async () => {
+            try {
+                await microsoftTeams.app.initialize();
+                setIsTeams(true);
+            } catch (error) {
+                console.warn("App is not running in Microsoft Teams.");
+                setIsTeams(false); // Fallback for running outside Teams
+            }
+        };
 
-    if (inProgress !== InteractionStatus.None) {
+        initializeTeams();
+        handleAuth();
+
+    }, [isTeams, inProgress, instance, accounts]);
+    
+    // MSAL will set inProgress to 'handleRedirect' after a successful login redirect.
+    // We show a loading indicator during this process.
+    if (inProgress === InteractionStatus.HandleRedirect || inProgress === InteractionStatus.Startup) {
         return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader2 className="animate-spin mr-2" /> Authenticating...</div>;
     }
 
@@ -41,21 +56,14 @@ export default function App() {
             <UnauthenticatedTemplate>
                 <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
                     <h1 className="text-3xl font-bold mb-4">AI Coach & Mentor</h1>
-                    {isTeams ? (
-                        <p className="mb-8">Attempting to sign you in via Microsoft Teams...</p>
-                    ) : (
-                        <>
-                            <p className="mb-8">Please sign in to continue.</p>
-                            <button onClick={() => instance.loginRedirect(loginRequest)} className="bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors">
-                                Sign In
-                            </button>
-                        </>
-                    )}
+                    <p className="mb-8">Please wait, attempting to sign you in...</p>
+                    {/* The login process is now handled automatically by the useEffect hook */}
                 </div>
             </UnauthenticatedTemplate>
         </>
     );
 }
+
 
 function AuthenticatedApp() {
     const { instance, accounts } = useMsal();
@@ -90,7 +98,7 @@ function AuthenticatedApp() {
                 } catch (e) {
                     console.error("Error acquiring token or setting Supabase session:", e);
                      if (e instanceof InteractionRequiredAuthError) {
-                        instance.acquireTokenPopup(loginRequest);
+                        instance.loginRedirect(loginRequest); // Use redirect for interaction
                     }
                     setSupabaseError(e.message);
                 }
@@ -124,6 +132,7 @@ function AuthenticatedApp() {
     return <MainInterface user={user} initialMode={modeSelected} onModeChange={handleModeSelect} />;
 }
 
+// ... MainInterface and other components remain unchanged from the previous version
 function MainInterface({ user, initialMode, onModeChange }) {
     const [currentMode, setCurrentMode] = useState(initialMode);
 
