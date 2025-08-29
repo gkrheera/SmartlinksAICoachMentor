@@ -4,7 +4,7 @@ import { InteractionStatus, InteractionRequiredAuthError } from '@azure/msal-bro
 import { supabase } from './supabaseClient';
 import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Lightbulb, UserCheck } from 'lucide-react';
 import * as microsoftTeams from "@microsoft/teams-js";
-import { loginRequest, apiRequest } from './authConfig';
+import { loginRequest } from './authConfig';
 
 export default function App() {
     const { instance, inProgress } = useMsal();
@@ -20,9 +20,19 @@ export default function App() {
     useEffect(() => {
         if (isTeams && !authAttempted && inProgress === InteractionStatus.None) {
             setAuthAttempted(true);
-            instance.ssoSilent(loginRequest).catch((error) => {
+
+            // Generate and store a nonce in session storage to use for the auth request.
+            const nonce = crypto.randomUUID();
+            sessionStorage.setItem("msal_nonce", nonce);
+            
+            const request = {
+                ...loginRequest,
+                nonce: nonce,
+            };
+
+            instance.ssoSilent(request).catch((error) => {
                 console.warn("SSO Silent failed, attempting popup:", error);
-                instance.loginPopup(loginRequest).catch(e => {
+                instance.loginPopup(request).catch(e => {
                     console.error("Popup login failed:", e);
                 });
             });
@@ -77,14 +87,23 @@ function AuthenticatedApp() {
                         throw new Error("ID Token not found in MSAL response.");
                     }
 
-                    // FIX: Extract the nonce from the ID token claims.
-                    // The nonce is required by Supabase to prevent replay attacks.
-                    const nonce = response.idTokenClaims.nonce;
+                    // Retrieve the nonce we stored before the authentication request.
+                    const nonce = sessionStorage.getItem("msal_nonce");
+                    if (!nonce) {
+                        throw new Error("Nonce could not be retrieved from session storage.");
+                    }
+                    // Clean up the nonce after using it.
+                    sessionStorage.removeItem("msal_nonce");
+                    
+                    // Security check: verify the nonce in the token matches our stored nonce.
+                    if (response.idTokenClaims.nonce !== nonce) {
+                        throw new Error("Nonce mismatch error. Please try signing in again.");
+                    }
 
                     const { data, error } = await supabase.auth.signInWithIdToken({
                         provider: 'azure',
                         token: response.idToken,
-                        nonce: nonce // Pass the nonce to Supabase for verification.
+                        nonce: nonce // Pass the verified nonce to Supabase.
                     });
 
                     if (error) throw error;
