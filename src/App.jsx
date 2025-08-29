@@ -1,117 +1,103 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { SignedIn, SignedOut, useUser, useAuth, useClerk } from '@clerk/clerk-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useMsal, AuthenticatedTemplate, UnauthenticatedTemplate } from '@azure/msal-react';
+import { InteractionStatus, InteractionRequiredAuthError } from '@azure/msal-browser';
 import { supabase } from './supabaseClient';
 import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Lightbulb, UserCheck } from 'lucide-react';
 import * as microsoftTeams from "@microsoft/teams-js";
+import { loginRequest, apiRequest } from './authConfig';
 
-/**
- * The main App component handles the primary SSO logic. It detects if the
- * app is running within Microsoft Teams and triggers the authentication
- * flow automatically for a seamless user experience.
- */
 export default function App() {
-    const { authenticateWithRedirect, isLoaded } = useClerk();
+    const { instance, inProgress } = useMsal();
     const [isTeams, setIsTeams] = useState(false);
-    const [loading, setLoading] = useState(true);
-    const authTriggered = useRef(false);
+    const [authAttempted, setAuthAttempted] = useState(false);
 
     useEffect(() => {
-        const initialize = async () => {
-            try {
-                await microsoftTeams.app.initialize();
-                setIsTeams(true);
-            } catch (error) {
-                console.warn("App is not running in Microsoft Teams.");
-                setIsTeams(false);
-            } finally {
-                setLoading(false);
-            }
-        };
-        initialize();
+        microsoftTeams.app.initialize().then(() => {
+            setIsTeams(true);
+        }).catch(() => setIsTeams(false));
     }, []);
 
-    // Wrap handleLogin in useCallback to stabilize its identity.
-    // This prevents it from being recreated on every render, fixing the race condition.
-    const handleLogin = useCallback(() => {
-        if (authTriggered.current) return;
-        authTriggered.current = true;
-        authenticateWithRedirect({
-            strategy: 'samlc_31s6ytG1tvCOO2UKzOvumyLDd0X', 
-            redirectUrl: '/',
-            redirectUrlComplete: '/'
-        });
-    }, [authenticateWithRedirect]);
-
-    // This effect now has a stable handleLogin dependency.
     useEffect(() => {
-        if (!loading && isLoaded && isTeams) {
-            handleLogin();
+        if (isTeams && !authAttempted && inProgress === InteractionStatus.None) {
+            setAuthAttempted(true);
+            instance.ssoSilent(loginRequest).catch((error) => {
+                console.warn("SSO Silent failed, attempting popup:", error);
+                instance.loginPopup(loginRequest).catch(e => {
+                    console.error("Popup login failed:", e);
+                });
+            });
         }
-    }, [loading, isLoaded, isTeams, handleLogin]);
+    }, [isTeams, inProgress, instance, authAttempted]);
 
-
-    if (loading || !isLoaded) { // Show loading indicator until both are ready
-        return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader2 className="animate-spin mr-2" /> Initializing App...</div>;
+    if (inProgress !== InteractionStatus.None) {
+        return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader2 className="animate-spin mr-2" /> Authenticating...</div>;
     }
 
     return (
         <>
-            <SignedIn>
+            <AuthenticatedTemplate>
                 <AuthenticatedApp />
-            </SignedIn>
-            <SignedOut>
+            </AuthenticatedTemplate>
+            <UnauthenticatedTemplate>
                 <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
                     <h1 className="text-3xl font-bold mb-4">AI Coach & Mentor</h1>
                     {isTeams ? (
-                        <p className="mb-8">Please wait, attempting to sign you in automatically...</p>
+                        <p className="mb-8">Attempting to sign you in via Microsoft Teams...</p>
                     ) : (
                         <>
                             <p className="mb-8">Please sign in to continue.</p>
-                            <button onClick={handleLogin} className="bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors">
+                            <button onClick={() => instance.loginRedirect(loginRequest)} className="bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors">
                                 Sign In
                             </button>
                         </>
                     )}
                 </div>
-            </SignedOut>
+            </UnauthenticatedTemplate>
         </>
     );
 }
 
-/**
- * This component renders only when the user is authenticated.
- * It handles the Supabase session setup after Clerk has signed the user in.
- */
 function AuthenticatedApp() {
-    const { user } = useUser();
-    const { getToken } = useAuth();
+    const { instance, accounts } = useMsal();
     const [isSupabaseReady, setIsSupabaseReady] = useState(false);
-    const [modeSelected, setModeSelected] = useState(null);
+    const [modeSelected, setModeSelected] = useState(sessionStorage.getItem('appMode') || null);
     const [supabaseError, setSupabaseError] = useState(null);
+    const user = accounts[0] || null;
 
     useEffect(() => {
         const setSupabaseSession = async () => {
-            try {
-                const supabaseToken = await getToken({ template: 'supabase' });
-                if (!supabaseToken) {
-                    throw new Error("Could not get Supabase token from Clerk. Please ensure the Supabase JWT template is configured correctly in your Clerk dashboard.");
+            if (user) {
+                try {
+                    const response = await instance.acquireTokenSilent({
+                        ...loginRequest,
+                        account: user
+                    });
+
+                    if (!response.idToken) {
+                        throw new Error("ID Token not found in MSAL response.");
+                    }
+
+                    const { data, error } = await supabase.auth.signInWithIdToken({
+                        provider: 'azure',
+                        token: response.idToken,
+                    });
+
+                    if (error) throw error;
+                    if (!data.session) throw new Error("Supabase session could not be established.");
+                    
+                    setIsSupabaseReady(true);
+
+                } catch (e) {
+                    console.error("Error acquiring token or setting Supabase session:", e);
+                     if (e instanceof InteractionRequiredAuthError) {
+                        instance.acquireTokenPopup(loginRequest);
+                    }
+                    setSupabaseError(e.message);
                 }
-                const { error } = await supabase.auth.setSession({
-                    access_token: supabaseToken,
-                });
-                if (error) {
-                    throw error;
-                }
-                setIsSupabaseReady(true);
-            } catch (e) {
-                console.error("Error setting Supabase session:", e);
-                setSupabaseError(e.message);
             }
         };
-        if (user) {
-            setSupabaseSession();
-        }
-    }, [getToken, user]);
+        setSupabaseSession();
+    }, [instance, user]);
 
     const handleModeSelect = (mode) => {
         setModeSelected(mode);
@@ -122,8 +108,7 @@ function AuthenticatedApp() {
         return (
             <div className="flex flex-col items-center justify-center h-screen bg-red-900 text-white p-4 text-center">
                 <h1 className="text-2xl font-bold mb-4">Error Configuring Session</h1>
-                <p>There was a problem authenticating with the backend service.</p>
-                <p className="mt-4 text-sm font-mono bg-red-800 p-2 rounded">{supabaseError}</p>
+                <p>{supabaseError}</p>
             </div>
         );
     }
@@ -139,9 +124,7 @@ function AuthenticatedApp() {
     return <MainInterface user={user} initialMode={modeSelected} onModeChange={handleModeSelect} />;
 }
 
-/**
- * The main user interface, including the header and chat area.
- */
+
 function MainInterface({ user, initialMode, onModeChange }) {
     const [currentMode, setCurrentMode] = useState(initialMode);
 
@@ -159,7 +142,7 @@ function MainInterface({ user, initialMode, onModeChange }) {
                         {isMentorMode ? <BrainCircuit className="h-6 w-6 text-white" /> : <GitBranch className="h-6 w-6 text-white" />}
                     </div>
                     <div className="ml-3">
-                        <h1 className="text-lg font-bold text-white">{isMentorMode ? 'AI Mentor' : 'AI Coach'} for {user?.fullName || 'User'}</h1>
+                        <h1 className="text-lg font-bold text-white">{isMentorMode ? 'AI Mentor' : 'AI Coach'} for {user?.name || 'User'}</h1>
                         <p className={`text-xs ${isMentorMode ? 'text-green-400' : 'text-purple-300'}`}>Status: Active</p>
                     </div>
                 </div>
@@ -175,10 +158,6 @@ function MainInterface({ user, initialMode, onModeChange }) {
     );
 }
 
-/**
- * The chat interface component where users interact with the AI.
- * (Further implementation for sending/receiving messages is needed here).
- */
 function ChatInterface({ mode }) {
     const [messages, setMessages] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -190,7 +169,6 @@ function ChatInterface({ mode }) {
     const handleSend = async () => {
         if (input.trim() === '') return;
         console.log(`Sending message in ${mode} mode:`, input);
-        // TODO: Implement API call to Netlify function and update state
         setInput('');
     };
 
@@ -218,9 +196,6 @@ function ChatInterface({ mode }) {
     );
 }
 
-/**
- * The initial screen where the user chooses between "Mentor" and "Coach" mode.
- */
 function ModeSelection({ onSelect }) {
     return (
         <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white p-4">
