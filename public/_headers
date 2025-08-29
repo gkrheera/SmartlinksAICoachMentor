@@ -1,2 +1,2 @@
 /*
-  Content-Security-Policy: connect-src 'self' https://*.supabase.co [https://login.microsoftonline.com](https://login.microsoftonline.com) [https://graph.microsoft.com](https://graph.microsoft.com) data:; frame-src 'self' https://*.teams.microsoft.com; script-src 'self' [https://cdn.tailwindcss.com](https://cdn.tailwindcss.com);
+Content-Security-Policy: connect-src 'self' https://.supabase.co https://login.microsoftonline.com https://graph.microsoft.com data:; frame-src 'self' https://.teams.microsoft.com; script-src 'self' https://cdn.tailwindcss.com;
