@@ -6,61 +6,64 @@ import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Light
 import * as microsoftTeams from "@microsoft/teams-js";
 import { loginRequest, apiRequest } from './authConfig';
 
-/**
- * Generates a raw nonce and a SHA-256 hashed version of it.
- * The hashed nonce is sent to Azure AD during the authentication request.
- * The raw nonce is sent to Supabase for verification.
- * @returns {Promise<{nonce: string, hashedNonce: string}>}
- */
+// Helper function to generate a nonce pair for secure authentication
 async function generateNoncePair() {
-    // Generate a random nonce
-    const nonce = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
- 
-    // Hash the nonce for Azure authentication using the Web Crypto API
-    const encoder = new TextEncoder();
-    const encodedNonce = encoder.encode(nonce);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', encodedNonce);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashedNonce = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
- 
-    return { nonce, hashedNonce };
+  const nonce = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
+  const encoder = new TextEncoder();
+  const encodedNonce = encoder.encode(nonce);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', encodedNonce);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashedNonce = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+  return { nonce, hashedNonce };
 }
 
 export default function App() {
-    const { instance, inProgress } = useMsal();
+    const { instance, inProgress, accounts } = useMsal();
     const [isTeams, setIsTeams] = useState(false);
-    const [authAttempted, setAuthAttempted] = useState(false);
+    const authAttempted = useRef(false);
 
     useEffect(() => {
-        microsoftTeams.app.initialize().then(() => {
-            setIsTeams(true);
-        }).catch(() => setIsTeams(false));
+        const initializeTeams = async () => {
+            try {
+                await microsoftTeams.app.initialize();
+                setIsTeams(true);
+            } catch (error) {
+                console.warn("App is not running in Microsoft Teams.");
+                setIsTeams(false);
+            }
+        };
+        initializeTeams();
     }, []);
 
     useEffect(() => {
-        if (isTeams && !authAttempted && inProgress === InteractionStatus.None) {
-            setAuthAttempted(true);
-
+        if (isTeams && accounts.length === 0 && !authAttempted.current && inProgress === InteractionStatus.None) {
+            authAttempted.current = true;
             const performSso = async () => {
                 const { nonce, hashedNonce } = await generateNoncePair();
-                // Store the UNHASHED nonce for Supabase verification later.
-                sessionStorage.setItem("msal_nonce", nonce);
+                sessionStorage.setItem('ssoNonce', nonce);
                 
-                const request = {
-                    ...loginRequest,
-                    nonce: hashedNonce, // Use the HASHED nonce for the MSAL request.
-                };
-    
-                instance.ssoSilent(request).catch((error) => {
+                instance.ssoSilent({ ...loginRequest, nonce: hashedNonce }).catch((error) => {
                     console.warn("SSO Silent failed, attempting popup:", error);
-                    instance.loginPopup(request).catch(e => {
+                    instance.loginPopup({ ...loginRequest, nonce: hashedNonce }).catch(e => {
                         console.error("Popup login failed:", e);
                     });
                 });
             };
             performSso();
         }
-    }, [isTeams, inProgress, instance, authAttempted]);
+    }, [isTeams, inProgress, instance, accounts]);
+    
+    // This effect handles the redirect response from Azure AD
+    useEffect(() => {
+        instance.handleRedirectPromise().then((response) => {
+            if (response) {
+                // Handle successful login
+            }
+        }).catch(err => {
+            console.error(err);
+        });
+    }, [instance]);
+
 
     if (inProgress !== InteractionStatus.None) {
         return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader2 className="animate-spin mr-2" /> Authenticating...</div>;
@@ -95,52 +98,48 @@ function AuthenticatedApp() {
     const [isSupabaseReady, setIsSupabaseReady] = useState(false);
     const [modeSelected, setModeSelected] = useState(sessionStorage.getItem('appMode') || null);
     const [supabaseError, setSupabaseError] = useState(null);
-    const user = accounts[0] || null;
 
     useEffect(() => {
         const setSupabaseSession = async () => {
-            if (user) {
+            if (accounts.length > 0) {
                 try {
                     const response = await instance.acquireTokenSilent({
                         ...loginRequest,
-                        account: user
+                        account: accounts[0]
                     });
 
                     if (!response.idToken) {
                         throw new Error("ID Token not found in MSAL response.");
                     }
-                    
-                    // Retrieve the original UNHASHED nonce from session storage.
-                    const nonce = sessionStorage.getItem("msal_nonce");
+
+                    const nonce = sessionStorage.getItem('ssoNonce');
                     if (!nonce) {
-                        throw new Error("Nonce could not be retrieved from session storage.");
+                        console.warn("SSO nonce not found in session storage. This may fail if a nonce is required.");
                     }
-                    sessionStorage.removeItem("msal_nonce");
 
                     const { data, error } = await supabase.auth.signInWithIdToken({
                         provider: 'azure',
                         token: response.idToken,
-                        nonce: nonce // Pass the UNHASHED nonce to Supabase.
+                        nonce: nonce,
                     });
 
                     if (error) throw error;
                     if (!data.session) throw new Error("Supabase session could not be established.");
                     
                     setIsSupabaseReady(true);
+                    sessionStorage.removeItem('ssoNonce'); // Clean up nonce after use
 
                 } catch (e) {
                     console.error("Error acquiring token or setting Supabase session:", e);
                      if (e instanceof InteractionRequiredAuthError) {
-                        const { nonce, hashedNonce } = await generateNoncePair();
-                        sessionStorage.setItem("msal_nonce", nonce);
-                        instance.loginPopup({...loginRequest, nonce: hashedNonce});
+                        instance.loginPopup(loginRequest);
                     }
                     setSupabaseError(e.message);
                 }
             }
         };
         setSupabaseSession();
-    }, [instance, user]);
+    }, [instance, accounts]);
 
     const handleModeSelect = (mode) => {
         setModeSelected(mode);
@@ -164,18 +163,15 @@ function AuthenticatedApp() {
         return <ModeSelection onSelect={handleModeSelect} />;
     }
 
-    return <MainInterface user={user} initialMode={modeSelected} onModeChange={handleModeSelect} />;
+    return <MainInterface user={accounts[0]} initialMode={modeSelected} onModeChange={handleModeSelect} />;
 }
 
 function MainInterface({ user, initialMode, onModeChange }) {
-    const { instance } = useMsal();
     const [currentMode, setCurrentMode] = useState(initialMode);
-
     const handleNavClick = (mode) => {
         setCurrentMode(mode);
         onModeChange(mode);
     };
-
     const isMentorMode = currentMode === 'mentor';
     return (
         <div className={`flex flex-col h-screen text-gray-100 font-sans ${isMentorMode ? 'bg-gray-800' : 'bg-purple-900'}`}>
@@ -195,64 +191,72 @@ function MainInterface({ user, initialMode, onModeChange }) {
                 </div>
             </header>
             <div className="flex-1 overflow-y-hidden">
-                <ChatInterface mode={currentMode} user={user} instance={instance} key={currentMode} />
+                <ChatInterface mode={currentMode} key={currentMode} />
             </div>
         </div>
     );
 }
 
-function ChatInterface({ mode, user, instance }) {
+function ChatInterface({ mode }) {
+    const { instance, accounts } = useMsal();
     const [messages, setMessages] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [input, setInput] = useState('');
     const messagesEndRef = useRef(null);
 
-    useEffect(() => { 
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); 
-    }, [messages]);
+    useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
     const handleSend = async () => {
         if (input.trim() === '' || isLoading) return;
 
-        const newMessage = { role: 'user', content: input };
-        setMessages(prev => [...prev, newMessage]);
+        const userMessage = { role: 'user', content: input };
+        setMessages(prev => [...prev, userMessage]);
         setInput('');
         setIsLoading(true);
+        
+        const systemPrompt = mode === 'coach' 
+            ? `You are an AI Coach that strictly adheres to the ICF Core Competencies and PCC Markers. Your primary goal is to help the user find their own solutions through powerful questioning and active listening.
+            
+            **Core Principles:**
+            1.  **One Question at a Time:** You MUST only ask ONE open-ended question per response. This is your most important rule.
+            2.  **Listen Actively:** Reflect back the user's language and emotions before asking your question. Use phrases like, "What I'm hearing is..." or "It sounds like you're feeling..."
+            3.  **Evoke Awareness:** Ask questions about the user's way of thinking, their assumptions, values, and needs.
+            4.  **No Advice:** NEVER give direct advice, solutions, or opinions.`
+            : `You are an AI Mentor. Your purpose is to provide expert advice and actionable guidance. Your methodology is to first **Inquire**, then **Advise**.
+
+            **Your Process:**
+            1.  **Inquire First:** When the user presents a problem, your first priority is to understand their context. Ask 1-2 powerful, open-ended questions to clarify the situation, the goals, and the obstacles. Do NOT offer any advice at this stage.
+            2.  **Identify Context:** Based on the user's answers, determine if their challenge relates to Project Management, IT Consulting, Facilitation, or Sales.
+            3.  **Advise Second:** Once you have a clear understanding, transition to providing direct advice. Your recommendations should be clear, actionable, and framed within the context you have identified.`;
 
         try {
-            // Acquire access token to authorize the call to the Netlify function
             const tokenResponse = await instance.acquireTokenSilent({
                 ...apiRequest,
-                account: user
+                account: accounts[0],
             });
-
-            const systemPrompt = mode === 'mentor' 
-                ? 'You are an AI Mentor. Provide expert advice and proven frameworks.'
-                : 'You are an AI Coach. Help the user explore their own thinking and find their own solutions.';
 
             const response = await fetch('/.netlify/functions/callGemini', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${tokenResponse.accessToken}`
+                    'Authorization': `Bearer ${tokenResponse.accessToken}`,
                 },
-                body: JSON.stringify({ 
-                    history: [...messages, newMessage], 
-                    systemPrompt 
-                })
+                body: JSON.stringify({
+                    history: [...messages, userMessage],
+                    systemPrompt: systemPrompt
+                }),
             });
 
             if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.error || 'Failed to get a response from the AI.');
+                throw new Error(`API call failed with status: ${response.status}`);
             }
 
             const data = await response.json();
             setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
-
         } catch (error) {
-            console.error(`Error in ${mode} mode:`, error);
-            setMessages(prev => [...prev, { role: 'assistant', content: `Sorry, there was an error: ${error.message}` }]);
+            console.error("Failed to send message:", error);
+            const errorMessage = { role: 'assistant', content: `Sorry, there was an error: ${error.message}` };
+            setMessages(prev => [...prev, errorMessage]);
         } finally {
             setIsLoading(false);
         }
@@ -261,6 +265,8 @@ function ChatInterface({ mode, user, instance }) {
     const isMentorMode = mode === 'mentor';
     const bgColor = isMentorMode ? 'bg-gray-800' : 'bg-purple-50';
     const textColor = isMentorMode ? 'text-gray-100' : 'text-gray-900';
+    const assistantIconBg = isMentorMode ? 'bg-blue-500' : 'bg-white border-2 border-purple-200';
+    const assistantIcon = isMentorMode ? <Bot className="text-white" /> : <GitBranch className="text-purple-600" />;
     const userBubbleBg = isMentorMode ? 'bg-gray-700' : 'bg-purple-600 text-white';
     const assistantBubbleBg = isMentorMode ? 'bg-gray-900 border border-gray-700' : 'bg-purple-100 text-purple-900';
     const footerBg = isMentorMode ? 'bg-gray-900 border-t border-gray-700' : 'bg-white border-t border-gray-200';
@@ -270,34 +276,34 @@ function ChatInterface({ mode, user, instance }) {
     return (
         <div className={`flex flex-col h-full ${bgColor} ${textColor}`}>
             <main className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
-                {messages.map((msg, index) => (
-                    <div key={index} className={`flex items-start gap-3 ${msg.role === 'user' ? 'justify-end' : ''}`}>
+                 {messages.map((msg, index) => (
+                    <div key={index} className={`flex items-start gap-4 ${msg.role === 'user' ? 'justify-end' : ''}`}>
                         {msg.role === 'assistant' && (
-                            <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${isMentorMode ? 'bg-blue-500' : 'bg-purple-200'}`}>
-                                {isMentorMode ? <Bot className="text-white" size={20} /> : <GitBranch className="text-purple-600" size={20} />}
+                            <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${assistantIconBg}`}>
+                                {assistantIcon}
                             </div>
                         )}
-                        <div className={`max-w-xs md:max-w-md lg:max-w-lg px-4 py-2 rounded-xl ${msg.role === 'user' ? userBubbleBg : assistantBubbleBg}`}>
-                            <p className="text-sm">{msg.content}</p>
+                        <div className={`max-w-lg p-3 rounded-lg ${msg.role === 'user' ? userBubbleBg : assistantBubbleBg}`}>
+                            <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                         </div>
-                        {msg.role === 'user' && (
-                            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center">
-                                <User className="text-white" size={20} />
+                         {msg.role === 'user' && (
+                            <div className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center bg-gray-600">
+                                <User className="text-white" />
                             </div>
                         )}
                     </div>
                 ))}
                 {isLoading && (
-                    <div className="flex items-start gap-3">
-                        <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${isMentorMode ? 'bg-blue-500' : 'bg-purple-200'}`}>
-                            {isMentorMode ? <Bot className="text-white" size={20} /> : <GitBranch className="text-purple-600" size={20} />}
+                    <div className="flex items-start gap-4">
+                         <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${assistantIconBg}`}>
+                            {assistantIcon}
                         </div>
-                        <div className={`max-w-xs md:max-w-md lg:max-w-lg px-4 py-2 rounded-xl ${assistantBubbleBg}`}>
-                            <Loader2 className="animate-spin" />
+                        <div className={`max-w-lg p-3 rounded-lg ${assistantBubbleBg}`}>
+                           <Loader2 className="animate-spin h-5 w-5" />
                         </div>
                     </div>
                 )}
-                 <div ref={messagesEndRef} />
+                <div ref={messagesEndRef} />
             </main>
             <footer className={`p-2 sm:p-4 ${footerBg}`}>
                 <div className={`flex items-center rounded-lg p-2 ${inputBg}`}>
@@ -354,6 +360,7 @@ const NavButton = ({ icon, label, active, onClick, mode }) => {
     const activeClass = mode === 'mentor' ? mentorActive : coachActive;
     return (
         <button onClick={onClick} className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors ${active ? activeClass : inactive}`}>
+             {icon}
             <span className="hidden sm:inline">{label}</span>
         </button>
     );
