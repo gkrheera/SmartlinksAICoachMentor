@@ -197,9 +197,21 @@ function MainInterface({ user, initialMode, onModeChange }) {
     );
 }
 
+// Function to generate the initial welcome message based on the mode
+const getInitialMessage = (mode) => {
+    const welcomeMessage = {
+        role: 'assistant',
+        content: mode === 'coach'
+            ? "Hello! I'm your AI Coach. Before we begin, I want to assure you that our conversation is completely confidential. I'm here to provide a safe space for you to explore your thoughts.\n\nWhat's on your mind today?"
+            : "Welcome. I'm your AI Mentor. All of our discussions are confidential, so please feel free to speak openly. I'm here to offer guidance and advice.\n\nTo start, could you tell me a bit about the challenge or topic you'd like to work on?"
+    };
+    return [welcomeMessage];
+};
+
 function ChatInterface({ mode }) {
     const { instance, accounts } = useMsal();
-    const [messages, setMessages] = useState([]);
+    // Initialize messages state with the welcome message
+    const [messages, setMessages] = useState(() => getInitialMessage(mode));
     const [isLoading, setIsLoading] = useState(false);
     const [input, setInput] = useState('');
     const messagesEndRef = useRef(null);
