@@ -18,60 +18,63 @@ async function generateNoncePair() {
 }
 
 export default function App() {
-    const { instance, inProgress, accounts, handleRedirectPromise } = useMsal();
+    const { instance, inProgress, accounts } = useMsal();
     const [isTeams, setIsTeams] = useState(false);
     const authAttempted = useRef(false);
     const [authError, setAuthError] = useState(null);
 
     useEffect(() => {
         const initializeAndAuth = async () => {
+            if (authAttempted.current || accounts.length > 0 || inProgress !== InteractionStatus.None) {
+                return;
+            }
+            authAttempted.current = true;
+
             try {
+                // First, try to initialize Teams SDK
                 await microsoftTeams.app.initialize();
+                console.log("App is running in Microsoft Teams.");
                 setIsTeams(true);
 
-                // --- START: TEAMS-NATIVE AUTHENTICATION FLOW ---
-                if (accounts.length === 0 && !authAttempted.current) {
-                    authAttempted.current = true;
-                    console.log("In Teams, attempting native authentication flow.");
+                // --- TEAMS-NATIVE AUTHENTICATION FLOW ---
+                console.log("In Teams, attempting native authentication flow.");
+                const { nonce, hashedNonce } = await generateNoncePair();
+                sessionStorage.setItem('ssoNonce', nonce);
+                
+                const authStartUrl = `${window.location.origin}/auth.html`;
 
-                    const { nonce, hashedNonce } = await generateNoncePair();
-                    sessionStorage.setItem('ssoNonce', nonce);
-                    
-                    // This must match the URL you add in Azure AD for the SPA platform.
-                    const authStartUrl = `${window.location.origin}/auth.html`;
-
-                    microsoftTeams.authentication.authenticate({
-                        url: authStartUrl,
-                        width: 600,
-                        height: 535,
-                        successCallback: (result) => {
-                            // The popup (auth.html) sends the URL hash back here.
-                            // Process the hash to complete the login.
-                            console.log("Teams auth successful, processing result...");
-                            instance.handleRedirectPromise(result)
-                                .catch(err => {
-                                    console.error("Error processing redirect promise from Teams popup:", err);
-                                    setAuthError(err.errorMessage || "Failed to process login response.");
-                                });
-                        },
-                        failureCallback: (reason) => {
-                            console.error("Teams authentication failed:", reason);
-                            setAuthError(reason);
-                        }
-                    });
-                }
-                // --- END: TEAMS-NATIVE AUTHENTICATION FLOW ---
+                microsoftTeams.authentication.authenticate({
+                    url: authStartUrl,
+                    width: 600,
+                    height: 535,
+                    successCallback: (result) => {
+                        console.log("Teams auth successful, processing result...");
+                        // MSAL React will handle the hash that comes back from the popup
+                        // It's often handled by handleRedirectPromise on page load, 
+                        // but we ensure it's processed here if needed.
+                        // For MSAL React, simply reloading or letting the main instance handle it is often enough.
+                        // window.location.hash = result; // This might be needed depending on MSAL version
+                        instance.handleRedirectPromise(result).catch(err => {
+                             console.error("Error in Teams successCallback handleRedirectPromise:", err);
+                             setAuthError(err.errorMessage || "Failed to process login response from Teams.");
+                        });
+                    },
+                    failureCallback: (reason) => {
+                        console.error("Teams authentication failed:", reason);
+                        setAuthError(reason);
+                    }
+                });
+                // --- END TEAMS-NATIVE AUTH ---
 
             } catch (error) {
                 console.warn("App is not running in Microsoft Teams. Using standard browser redirect flow.");
-                setIsTeams(false);
-                // Handle standard browser redirect flow
-                if (accounts.length === 0 && !authAttempted.current && inProgress === InteractionStatus.None) {
-                    authAttempted.current = true;
-                     instance.handleRedirectPromise().catch(err => {
+                // --- STANDARD BROWSER FLOW ---
+                // This logic runs if not in Teams or Teams init fails
+                if (inProgress === InteractionStatus.None) {
+                   instance.handleRedirectPromise().catch(err => {
                         console.error("Redirect promise error:", err);
-                        // If no auth response is found in the URL, initiate the login redirect.
-                        if (!window.location.hash.includes('code=')) {
+                        // Only redirect if there's no auth response hash in the URL
+                        if (!window.location.hash.includes('code=') && !window.location.hash.includes('id_token=')) {
                            instance.loginRedirect(loginRequest);
                         }
                     });
@@ -79,13 +82,11 @@ export default function App() {
             }
         };
 
-        if (inProgress === InteractionStatus.None && accounts.length === 0) {
-            initializeAndAuth();
-        }
-    }, [instance, inProgress, accounts, handleRedirectPromise]);
+        initializeAndAuth();
+    }, [instance, inProgress, accounts]);
 
 
-    if (inProgress !== InteractionStatus.None) {
+    if (inProgress !== InteractionStatus.None && inProgress !== "handleRedirect") {
         return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader2 className="animate-spin mr-2" /> Authenticating...</div>;
     }
     
@@ -94,12 +95,23 @@ export default function App() {
             <div className="flex flex-col items-center justify-center h-screen bg-red-900 text-white p-4 text-center">
                 <h1 className="text-2xl font-bold mb-4">Authentication Error</h1>
                 <p>{authError}</p>
-                 <button onClick={() => window.location.reload()} className="mt-4 bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors">
+                 <button onClick={() => { setAuthError(null); authAttempted.current = false; handleLogin(); }} className="mt-4 bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors">
                     Retry
                 </button>
             </div>
         );
     }
+    
+    // This is a new function to re-trigger login manually if needed
+    const handleLogin = () => {
+         if (isTeams) {
+            // Re-run the teams auth flow
+            microsoftTeams.authentication.authenticate({ /* ... same config as above ... */ });
+         } else {
+            instance.loginRedirect(loginRequest);
+         }
+    };
+
 
     return (
         <>
@@ -149,13 +161,14 @@ function AuthenticatedApp() {
                     const { data, error } = await supabase.auth.signInWithIdToken({
                         provider: 'azure',
                         token: response.idToken,
-                        nonce: sessionStorage.getItem('ssoNonce')
+                        nonce: sessionStorage.getItem('ssoNonce') // Nonce for security
                     });
 
                     if (error) throw error;
                     if (!data.session) throw new Error("Supabase session could not be established.");
                     
                     setIsSupabaseReady(true);
+                    sessionStorage.removeItem('ssoNonce'); // Clean up nonce
 
                 } catch (e) {
                     console.error("Error acquiring token or setting Supabase session:", e);
