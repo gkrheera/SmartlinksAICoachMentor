@@ -1,26 +1,41 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Authenticating...</title>
-  <!-- CORRECTED: Using the latest, stable, and correct CDN URL for the Teams SDK -->
-  <script src="https://res.cdn.office.net/teams-js/2.21.0/js/MicrosoftTeams.min.js" xintegrity="sha384-53k2f2Gz7Wg3h3c2dG2h3gqO2S1c5s1xT+3F+efT6e/R3MHIeTCa1k24l/g31fI1" crossorigin="anonymous"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authentication</title>
+    <!-- Microsoft Teams SDK -->
+    <script src="https://res.cdn.office.net/teams-js/2.0.0/js/MicrosoftTeams.min.js"
+        xintegrity="sha384-QtTBFeFlfRDZBfwCAeASrTqYHvIeL0iNfi3iGqG9D+ps24iZfK/L3tT4v9+VRUnI"
+        crossorigin="anonymous"></script>
 </head>
 <body>
-  <p>Please wait while we complete your sign-in...</p>
-  <script>
-    // This script runs inside the Teams-managed popup.
-    microsoftTeams.app.initialize().then(() => {
-      // Check if the URL has an authentication hash (#...) from Azure AD
-      if (window.location.hash) {
-        // If it does, pass the entire hash back to the main app window.
-        // The main app is waiting for this success signal.
-        microsoftTeams.authentication.notifySuccess(window.location.hash);
-      } else {
-        // If there's no hash, something went wrong.
-        microsoftTeams.authentication.notifyFailure("No authentication hash found in the redirect URL.");
-      }
-    });
-  </script>
+    <script>
+        // Initialize the Microsoft Teams SDK
+        microsoftTeams.app.initialize().then(() => {
+            console.log("Teams SDK Initialized in auth.html");
+
+            // Get the authentication hash from the URL (e.g., #id_token=... or #code=...)
+            const hash = window.location.hash;
+
+            // Check if the hash contains an id_token or an access_token.
+            // This indicates a successful authentication response.
+            if (hash && (hash.includes("id_token") || hash.includes("access_token"))) {
+                console.log("Auth hash found in URL. Notifying parent window of success.");
+                // If successful, send the entire hash string back to the parent app window.
+                // The main app will be responsible for parsing the token from this hash.
+                microsoftTeams.authentication.notifySuccess(hash);
+            } else {
+                console.error("No valid auth hash found in URL. Notifying parent window of failure.");
+                // If it fails for any reason (e.g., user cancels, error in redirect),
+                // notify the parent window of the failure.
+                microsoftTeams.authentication.notifyFailure("No authentication hash found in the redirect URL.");
+            }
+        }).catch((error) => {
+            console.error("Failed to initialize Teams SDK in auth.html:", error);
+            microsoftTeams.authentication.notifyFailure(`SDK Init Failed: ${error}`);
+        });
+    </script>
 </body>
 </html>
 
