@@ -29,10 +29,8 @@ export const msalConfig = {
             console.error(message);
             return;
           case LogLevel.Info:
-            // console.info(message); // De-cluttering console
             return;
           case LogLevel.Verbose:
-            // console.debug(message); // De-cluttering console
             return;
           case LogLevel.Warning:
             console.warn(message);
