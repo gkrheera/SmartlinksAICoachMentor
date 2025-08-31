@@ -23,67 +23,66 @@ export default function App() {
     const authAttempted = useRef(false);
     const [authError, setAuthError] = useState(null);
 
+    // This function handles both initial login and retries
+    const handleLogin = async () => {
+        setAuthError(null);
+        authAttempted.current = true; // Mark that we are trying to log in
+        if (isTeams) {
+            console.log("Attempting Teams native authentication flow.");
+            const { nonce, hashedNonce } = await generateNoncePair();
+            sessionStorage.setItem('ssoNonce', nonce);
+            const authStartUrl = `${window.location.origin}/auth.html`;
+            microsoftTeams.authentication.authenticate({
+                url: authStartUrl,
+                width: 600,
+                height: 535,
+                successCallback: (result) => {
+                    console.log("Teams auth successful, processing result...");
+                    instance.handleRedirectPromise(result).catch(err => {
+                         console.error("Error processing redirect from Teams popup:", err);
+                         setAuthError(err.errorMessage || "Failed to process login response from Teams.");
+                    });
+                },
+                failureCallback: (reason) => {
+                    console.error("Teams authentication failed:", reason);
+                    setAuthError(reason);
+                }
+            });
+        } else {
+            console.log("Attempting standard browser redirect flow.");
+            instance.loginRedirect(loginRequest);
+        }
+    };
+
     useEffect(() => {
         const initializeAndAuth = async () => {
-            if (authAttempted.current || accounts.length > 0 || inProgress !== InteractionStatus.None) {
+             // Prevent re-running the auth flow unnecessarily
+             if (authAttempted.current || accounts.length > 0 || inProgress !== InteractionStatus.None) {
                 return;
             }
-            authAttempted.current = true;
-
+            
             try {
-                // First, try to initialize Teams SDK
                 await microsoftTeams.app.initialize();
-                console.log("App is running in Microsoft Teams.");
                 setIsTeams(true);
-
-                // --- TEAMS-NATIVE AUTHENTICATION FLOW ---
-                console.log("In Teams, attempting native authentication flow.");
-                const { nonce, hashedNonce } = await generateNoncePair();
-                sessionStorage.setItem('ssoNonce', nonce);
-                
-                const authStartUrl = `${window.location.origin}/auth.html`;
-
-                microsoftTeams.authentication.authenticate({
-                    url: authStartUrl,
-                    width: 600,
-                    height: 535,
-                    successCallback: (result) => {
-                        console.log("Teams auth successful, processing result...");
-                        // MSAL React will handle the hash that comes back from the popup
-                        // It's often handled by handleRedirectPromise on page load, 
-                        // but we ensure it's processed here if needed.
-                        // For MSAL React, simply reloading or letting the main instance handle it is often enough.
-                        // window.location.hash = result; // This might be needed depending on MSAL version
-                        instance.handleRedirectPromise(result).catch(err => {
-                             console.error("Error in Teams successCallback handleRedirectPromise:", err);
-                             setAuthError(err.errorMessage || "Failed to process login response from Teams.");
-                        });
-                    },
-                    failureCallback: (reason) => {
-                        console.error("Teams authentication failed:", reason);
-                        setAuthError(reason);
+                console.log("App is running in Microsoft Teams.");
+                handleLogin(); // Initiate Teams-specific login
+            } catch (error) {
+                console.warn("App is not running in Microsoft Teams. Using standard flow.");
+                setIsTeams(false);
+                // This handles the redirect back from Azure AD in a normal browser
+                instance.handleRedirectPromise().catch(err => {
+                    console.error("Redirect promise error:", err);
+                    // If there's no auth hash, it means we need to start the login process
+                    if (!window.location.hash.includes('code=')) {
+                       instance.loginRedirect(loginRequest);
                     }
                 });
-                // --- END TEAMS-NATIVE AUTH ---
-
-            } catch (error) {
-                console.warn("App is not running in Microsoft Teams. Using standard browser redirect flow.");
-                // --- STANDARD BROWSER FLOW ---
-                // This logic runs if not in Teams or Teams init fails
-                if (inProgress === InteractionStatus.None) {
-                   instance.handleRedirectPromise().catch(err => {
-                        console.error("Redirect promise error:", err);
-                        // Only redirect if there's no auth response hash in the URL
-                        if (!window.location.hash.includes('code=') && !window.location.hash.includes('id_token=')) {
-                           instance.loginRedirect(loginRequest);
-                        }
-                    });
-                }
             }
         };
 
         initializeAndAuth();
-    }, [instance, inProgress, accounts]);
+
+    }, [instance, inProgress, accounts, isTeams]);
 
 
     if (inProgress !== InteractionStatus.None && inProgress !== "handleRedirect") {
@@ -94,24 +93,13 @@ export default function App() {
        return (
             <div className="flex flex-col items-center justify-center h-screen bg-red-900 text-white p-4 text-center">
                 <h1 className="text-2xl font-bold mb-4">Authentication Error</h1>
-                <p>{authError}</p>
-                 <button onClick={() => { setAuthError(null); authAttempted.current = false; handleLogin(); }} className="mt-4 bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors">
+                <p className="max-w-md">{String(authError)}</p>
+                 <button onClick={handleLogin} className="mt-4 bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors">
                     Retry
                 </button>
             </div>
         );
     }
-    
-    // This is a new function to re-trigger login manually if needed
-    const handleLogin = () => {
-         if (isTeams) {
-            // Re-run the teams auth flow
-            microsoftTeams.authentication.authenticate({ /* ... same config as above ... */ });
-         } else {
-            instance.loginRedirect(loginRequest);
-         }
-    };
-
 
     return (
         <>
@@ -121,17 +109,10 @@ export default function App() {
             <UnauthenticatedTemplate>
                  <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
                     <h1 className="text-3xl font-bold mb-4">AI Coach & Mentor</h1>
-                     {isTeams ? (
-                        <div className="text-center">
-                           <Loader2 className="animate-spin h-8 w-8 mx-auto mb-4" />
-                           <p className="mb-8">Attempting to sign you in via Microsoft Teams...</p>
-                        </div>
-                    ) : (
-                         <div className="text-center">
-                           <Loader2 className="animate-spin h-8 w-8 mx-auto mb-4" />
-                           <p className="mb-8">Redirecting to sign-in page...</p>
-                        </div>
-                    )}
+                     <div className="text-center">
+                       <Loader2 className="animate-spin h-8 w-8 mx-auto mb-4" />
+                       <p className="mb-8">Attempting to sign you in...</p>
+                    </div>
                 </div>
             </UnauthenticatedTemplate>
         </>
@@ -161,14 +142,13 @@ function AuthenticatedApp() {
                     const { data, error } = await supabase.auth.signInWithIdToken({
                         provider: 'azure',
                         token: response.idToken,
-                        nonce: sessionStorage.getItem('ssoNonce') // Nonce for security
+                        nonce: sessionStorage.getItem('ssoNonce')
                     });
 
                     if (error) throw error;
                     if (!data.session) throw new Error("Supabase session could not be established.");
                     
                     setIsSupabaseReady(true);
-                    sessionStorage.removeItem('ssoNonce'); // Clean up nonce
 
                 } catch (e) {
                     console.error("Error acquiring token or setting Supabase session:", e);
@@ -313,7 +293,6 @@ function ChatInterface({ mode }) {
         }
     };
     
-    // ... (Styling variables remain the same) ...
     const isMentorMode = mode === 'mentor';
     const bgColor = isMentorMode ? 'bg-gray-800' : 'bg-purple-50';
     const textColor = isMentorMode ? 'text-gray-100' : 'text-gray-900';
