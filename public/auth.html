@@ -2,30 +2,58 @@
 <html>
 <head>
   <title>Authenticating...</title>
-  <!-- Using a known stable version of the Teams SDK -->
-  <script src="https://res.cdn.office.net/teams-js/2.0.0/js/MicrosoftTeams.min.js"
+  <!-- MSAL Browser Library -->
+  <script 
+    src="https://alcdn.msauth.net/browser/2.14.2/js/msal-browser.min.js"
+    xintegrity="sha384-ms20PWelA5F+bZTVbMryGNgunV2fC45mswOaGllUu1s2JDA/B8j1G/iP1gN2PL22"
+    crossorigin="anonymous"
+  ></script>
+  
+  <!-- Microsoft Teams SDK -->
+  <script 
+    src="https://res.cdn.office.net/teams-js/2.0.0/js/MicrosoftTeams.min.js"
     xintegrity="sha384-QtTBFeFlfRDZBfwCAeASrTqYHvIeL0iNfi3iGqG9D+ps24iZfK/L3tT4v9+VRUnI"
-    crossorigin="anonymous"></script>
+    crossorigin="anonymous"
+  ></script>
 </head>
 <body>
   <p>Please wait while we complete your sign-in...</p>
   <script>
     // This script runs inside the Teams-managed authentication popup.
+    // It's separate from the main React app.
+
+    // 1. Initialize a temporary MSAL instance configured to NOT handle the redirect automatically.
+    // This is the key change: it ensures the hash is available to be passed back to the main app.
+    const msalInstance = new msal.PublicClientApplication({
+        auth: {
+            // You MUST provide clientId here for the instance to be created.
+            // It doesn't need to be from env vars, as this is just for configuration.
+            clientId: "YOUR_REACT_APP_AZURE_CLIENT_ID" // Replace with your actual Client ID
+        },
+        cache: {
+            cacheLocation: "sessionStorage",
+            storeAuthStateInCookie: false,
+        },
+    });
+    msalInstance.handleRedirectPromise().catch((error) => {
+        // This catch is expected if the page is opened in a popup.
+        console.info("MSAL popup redirect handler initialized.");
+    });
+
+
+    // 2. Initialize the Teams SDK
     microsoftTeams.app.initialize().then(() => {
       console.log("Auth-popup initialized. Checking for auth hash...");
-      // The authentication provider (Azure AD) redirects to this page.
-      // The auth token is in the URL hash (e.g., #code=... or #id_token=...).
+      
+      // 3. Check for the authentication hash in the URL.
       if (window.location.hash) {
-        // If a hash is found, it means the login was likely successful.
-        // We pass the entire hash string back to the main app window.
+        // If a hash is found, pass it back to the main app window.
         microsoftTeams.authentication.notifySuccess(window.location.hash);
       } else {
-        // If there's no hash, it means something went wrong, or the user canceled.
-        // We notify the main app of the failure.
+        // If no hash, something went wrong.
         microsoftTeams.authentication.notifyFailure("No authentication hash found in the redirect URL.");
       }
     }).catch((error) => {
-        // This catch block handles errors if the Teams SDK fails to initialize.
         console.error("Failed to initialize Teams SDK in auth popup:", error);
         microsoftTeams.authentication.notifyFailure("SDK initialization failed.");
     });
