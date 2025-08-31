@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Authenticating...</title>
+  <script src="https://statics.teams.cdn.office.net/sdk/v2.12.0/js/MicrosoftTeams.min.js"></script>
+</head>
+<body>
+  <p>Please wait while we complete your sign-in...</p>
+  <script>
+    // This script runs inside the Teams-managed popup.
+    microsoftTeams.app.initialize().then(() => {
+      // Check if the URL has an authentication hash (#...) from Azure AD
+      if (window.location.hash) {
+        // If it does, pass the entire hash back to the main app window.
+        // The main app is waiting for this success signal.
+        microsoftTeams.authentication.notifySuccess(window.location.hash);
+      } else {
+        // If there's no hash, something went wrong.
+        microsoftTeams.authentication.notifyFailure("No authentication hash found in the redirect URL.");
+      }
+    });
+  </script>
+</body>
+</html>
