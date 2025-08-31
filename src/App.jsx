@@ -18,55 +18,87 @@ async function generateNoncePair() {
 }
 
 export default function App() {
-    const { instance, inProgress, accounts } = useMsal();
+    const { instance, inProgress, accounts, handleRedirectPromise } = useMsal();
     const [isTeams, setIsTeams] = useState(false);
     const authAttempted = useRef(false);
+    const [authError, setAuthError] = useState(null);
 
     useEffect(() => {
-        const initializeTeams = async () => {
+        const initializeAndAuth = async () => {
             try {
                 await microsoftTeams.app.initialize();
                 setIsTeams(true);
+
+                // --- START: TEAMS-NATIVE AUTHENTICATION FLOW ---
+                if (accounts.length === 0 && !authAttempted.current) {
+                    authAttempted.current = true;
+                    console.log("In Teams, attempting native authentication flow.");
+
+                    const { nonce, hashedNonce } = await generateNoncePair();
+                    sessionStorage.setItem('ssoNonce', nonce);
+                    
+                    // This must match the URL you add in Azure AD for the SPA platform.
+                    const authStartUrl = `${window.location.origin}/auth.html`;
+
+                    microsoftTeams.authentication.authenticate({
+                        url: authStartUrl,
+                        width: 600,
+                        height: 535,
+                        successCallback: (result) => {
+                            // The popup (auth.html) sends the URL hash back here.
+                            // Process the hash to complete the login.
+                            console.log("Teams auth successful, processing result...");
+                            instance.handleRedirectPromise(result)
+                                .catch(err => {
+                                    console.error("Error processing redirect promise from Teams popup:", err);
+                                    setAuthError(err.errorMessage || "Failed to process login response.");
+                                });
+                        },
+                        failureCallback: (reason) => {
+                            console.error("Teams authentication failed:", reason);
+                            setAuthError(reason);
+                        }
+                    });
+                }
+                // --- END: TEAMS-NATIVE AUTHENTICATION FLOW ---
+
             } catch (error) {
-                console.warn("App is not running in Microsoft Teams.");
+                console.warn("App is not running in Microsoft Teams. Using standard browser redirect flow.");
                 setIsTeams(false);
+                // Handle standard browser redirect flow
+                if (accounts.length === 0 && !authAttempted.current && inProgress === InteractionStatus.None) {
+                    authAttempted.current = true;
+                     instance.handleRedirectPromise().catch(err => {
+                        console.error("Redirect promise error:", err);
+                        // If no auth response is found in the URL, initiate the login redirect.
+                        if (!window.location.hash.includes('code=')) {
+                           instance.loginRedirect(loginRequest);
+                        }
+                    });
+                }
             }
         };
-        initializeTeams();
-    }, []);
 
-    useEffect(() => {
-        if (isTeams && accounts.length === 0 && !authAttempted.current && inProgress === InteractionStatus.None) {
-            authAttempted.current = true;
-            const performSso = async () => {
-                const { nonce, hashedNonce } = await generateNoncePair();
-                sessionStorage.setItem('ssoNonce', nonce);
-                
-                instance.ssoSilent({ ...loginRequest, nonce: hashedNonce }).catch((error) => {
-                    console.warn("SSO Silent failed, attempting popup:", error);
-                    instance.loginPopup({ ...loginRequest, nonce: hashedNonce }).catch(e => {
-                        console.error("Popup login failed:", e);
-                    });
-                });
-            };
-            performSso();
+        if (inProgress === InteractionStatus.None && accounts.length === 0) {
+            initializeAndAuth();
         }
-    }, [isTeams, inProgress, instance, accounts]);
-    
-    // This effect handles the redirect response from Azure AD
-    useEffect(() => {
-        instance.handleRedirectPromise().then((response) => {
-            if (response) {
-                // Handle successful login
-            }
-        }).catch(err => {
-            console.error(err);
-        });
-    }, [instance]);
+    }, [instance, inProgress, accounts, handleRedirectPromise]);
 
 
     if (inProgress !== InteractionStatus.None) {
         return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader2 className="animate-spin mr-2" /> Authenticating...</div>;
+    }
+    
+    if (authError) {
+       return (
+            <div className="flex flex-col items-center justify-center h-screen bg-red-900 text-white p-4 text-center">
+                <h1 className="text-2xl font-bold mb-4">Authentication Error</h1>
+                <p>{authError}</p>
+                 <button onClick={() => window.location.reload()} className="mt-4 bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors">
+                    Retry
+                </button>
+            </div>
+        );
     }
 
     return (
@@ -75,23 +107,25 @@ export default function App() {
                 <AuthenticatedApp />
             </AuthenticatedTemplate>
             <UnauthenticatedTemplate>
-                <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
+                 <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
                     <h1 className="text-3xl font-bold mb-4">AI Coach & Mentor</h1>
-                    {isTeams ? (
-                        <p className="mb-8">Attempting to sign you in via Microsoft Teams...</p>
+                     {isTeams ? (
+                        <div className="text-center">
+                           <Loader2 className="animate-spin h-8 w-8 mx-auto mb-4" />
+                           <p className="mb-8">Attempting to sign you in via Microsoft Teams...</p>
+                        </div>
                     ) : (
-                        <>
-                            <p className="mb-8">Please sign in to continue.</p>
-                            <button onClick={() => instance.loginRedirect(loginRequest)} className="bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors">
-                                Sign In
-                            </button>
-                        </>
+                         <div className="text-center">
+                           <Loader2 className="animate-spin h-8 w-8 mx-auto mb-4" />
+                           <p className="mb-8">Redirecting to sign-in page...</p>
+                        </div>
                     )}
                 </div>
             </UnauthenticatedTemplate>
         </>
     );
 }
+
 
 function AuthenticatedApp() {
     const { instance, accounts } = useMsal();
@@ -111,28 +145,24 @@ function AuthenticatedApp() {
                     if (!response.idToken) {
                         throw new Error("ID Token not found in MSAL response.");
                     }
-
-                    const nonce = sessionStorage.getItem('ssoNonce');
-                    if (!nonce) {
-                        console.warn("SSO nonce not found in session storage. This may fail if a nonce is required.");
-                    }
-
+                    
                     const { data, error } = await supabase.auth.signInWithIdToken({
                         provider: 'azure',
                         token: response.idToken,
-                        nonce: nonce,
+                        nonce: sessionStorage.getItem('ssoNonce')
                     });
 
                     if (error) throw error;
                     if (!data.session) throw new Error("Supabase session could not be established.");
                     
                     setIsSupabaseReady(true);
-                    sessionStorage.removeItem('ssoNonce'); // Clean up nonce after use
 
                 } catch (e) {
                     console.error("Error acquiring token or setting Supabase session:", e);
                      if (e instanceof InteractionRequiredAuthError) {
-                        instance.loginPopup(loginRequest);
+                        const { nonce, hashedNonce } = await generateNoncePair();
+                        sessionStorage.setItem('ssoNonce', nonce);
+                        instance.loginPopup({...loginRequest, nonce: hashedNonce});
                     }
                     setSupabaseError(e.message);
                 }
@@ -168,10 +198,12 @@ function AuthenticatedApp() {
 
 function MainInterface({ user, initialMode, onModeChange }) {
     const [currentMode, setCurrentMode] = useState(initialMode);
+
     const handleNavClick = (mode) => {
         setCurrentMode(mode);
         onModeChange(mode);
     };
+
     const isMentorMode = currentMode === 'mentor';
     return (
         <div className={`flex flex-col h-screen text-gray-100 font-sans ${isMentorMode ? 'bg-gray-800' : 'bg-purple-900'}`}>
@@ -197,38 +229,35 @@ function MainInterface({ user, initialMode, onModeChange }) {
     );
 }
 
-// Function to generate the initial welcome message based on the mode
-const getInitialMessage = (mode) => {
-    const welcomeMessage = {
-        role: 'assistant',
-        content: mode === 'coach'
-            ? "Hello! I'm your AI Coach. Before we begin, I want to assure you that our conversation is completely confidential. I'm here to provide a safe space for you to explore your thoughts.\n\nWhat's on your mind today?"
-            : "Welcome. I'm your AI Mentor. All of our discussions are confidential, so please feel free to speak openly. I'm here to offer guidance and advice.\n\nTo start, could you tell me a bit about the challenge or topic you'd like to work on?"
-    };
-    return [welcomeMessage];
-};
-
 function ChatInterface({ mode }) {
     const { instance, accounts } = useMsal();
-    // Initialize messages state with the welcome message
-    const [messages, setMessages] = useState(() => getInitialMessage(mode));
+    const [messages, setMessages] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [input, setInput] = useState('');
     const messagesEndRef = useRef(null);
+
+    useEffect(() => {
+        const welcomeMessage = {
+            role: 'assistant',
+            content: `Hello! I'm your AI ${mode}. Our conversation is confidential. What's on your mind today?`
+        };
+        setMessages([welcomeMessage]);
+    }, [mode]);
 
     useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
     const handleSend = async () => {
         if (input.trim() === '' || isLoading) return;
-
+        
         const userMessage = { role: 'user', content: input };
-        setMessages(prev => [...prev, userMessage]);
+        const newMessages = [...messages, userMessage];
+        setMessages(newMessages);
         setInput('');
         setIsLoading(true);
-        
+
         const systemPrompt = mode === 'coach' 
             ? `You are an AI Coach that strictly adheres to the ICF Core Competencies and PCC Markers. Your primary goal is to help the user find their own solutions through powerful questioning and active listening.
-            
+    
             **Core Principles:**
             1.  **One Question at a Time:** You MUST only ask ONE open-ended question per response. This is your most important rule.
             2.  **Listen Actively:** Reflect back the user's language and emotions before asking your question. Use phrases like, "What I'm hearing is..." or "It sounds like you're feeling..."
@@ -242,79 +271,59 @@ function ChatInterface({ mode }) {
             3.  **Advise Second:** Once you have a clear understanding, transition to providing direct advice. Your recommendations should be clear, actionable, and framed within the context you have identified.`;
 
         try {
-            const tokenResponse = await instance.acquireTokenSilent({
-                ...apiRequest,
-                account: accounts[0],
-            });
+            const tokenResponse = await instance.acquireTokenSilent({ ...apiRequest, account: accounts[0] });
 
             const response = await fetch('/.netlify/functions/callGemini', {
                 method: 'POST',
-                headers: {
+                headers: { 
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${tokenResponse.accessToken}`,
+                    'Authorization': `Bearer ${tokenResponse.accessToken}`
                 },
-                body: JSON.stringify({
-                    history: [...messages, userMessage],
-                    systemPrompt: systemPrompt
-                }),
+                body: JSON.stringify({ history: newMessages, systemPrompt }),
             });
 
             if (!response.ok) {
-                throw new Error(`API call failed with status: ${response.status}`);
+                const err = await response.json();
+                throw new Error(err.error || 'Failed to get a response from the server.');
             }
 
             const data = await response.json();
-            setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
+            const assistantMessage = { role: 'assistant', content: data.response };
+            setMessages(prev => [...prev, assistantMessage]);
+
         } catch (error) {
-            console.error("Failed to send message:", error);
+            console.error("Error calling Netlify function:", error);
             const errorMessage = { role: 'assistant', content: `Sorry, there was an error: ${error.message}` };
             setMessages(prev => [...prev, errorMessage]);
         } finally {
             setIsLoading(false);
         }
     };
-
+    
+    // ... (Styling variables remain the same) ...
     const isMentorMode = mode === 'mentor';
     const bgColor = isMentorMode ? 'bg-gray-800' : 'bg-purple-50';
     const textColor = isMentorMode ? 'text-gray-100' : 'text-gray-900';
-    const assistantIconBg = isMentorMode ? 'bg-blue-500' : 'bg-white border-2 border-purple-200';
-    const assistantIcon = isMentorMode ? <Bot className="text-white" /> : <GitBranch className="text-purple-600" />;
     const userBubbleBg = isMentorMode ? 'bg-gray-700' : 'bg-purple-600 text-white';
     const assistantBubbleBg = isMentorMode ? 'bg-gray-900 border border-gray-700' : 'bg-purple-100 text-purple-900';
     const footerBg = isMentorMode ? 'bg-gray-900 border-t border-gray-700' : 'bg-white border-t border-gray-200';
     const inputBg = isMentorMode ? 'bg-gray-700' : 'bg-gray-100';
     const sendButtonBg = isMentorMode ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700';
 
+
     return (
         <div className={`flex flex-col h-full ${bgColor} ${textColor}`}>
             <main className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
-                 {messages.map((msg, index) => (
-                    <div key={index} className={`flex items-start gap-4 ${msg.role === 'user' ? 'justify-end' : ''}`}>
-                        {msg.role === 'assistant' && (
-                            <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${assistantIconBg}`}>
-                                {assistantIcon}
-                            </div>
-                        )}
-                        <div className={`max-w-lg p-3 rounded-lg ${msg.role === 'user' ? userBubbleBg : assistantBubbleBg}`}>
-                            <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                {messages.map((msg, index) => (
+                    <div key={index} className={`flex items-start gap-3 ${msg.role === 'user' ? 'justify-end' : ''}`}>
+                        {msg.role === 'assistant' && <div className={`h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0 ${isMentorMode ? 'bg-blue-500' : 'bg-white border-2 border-purple-200'}`}>{isMentorMode ? <Bot className="text-white" /> : <GitBranch className="text-purple-600" />}</div>}
+                        <div className={`max-w-md p-3 rounded-2xl ${msg.role === 'user' ? userBubbleBg : assistantBubbleBg}`}>
+                           <p className="text-sm" style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</p>
                         </div>
-                         {msg.role === 'user' && (
-                            <div className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center bg-gray-600">
-                                <User className="text-white" />
-                            </div>
-                        )}
+                         {msg.role === 'user' && <div className="h-8 w-8 rounded-full bg-gray-600 flex items-center justify-center flex-shrink-0"><User className="text-white" size={20}/></div>}
                     </div>
                 ))}
-                {isLoading && (
-                    <div className="flex items-start gap-4">
-                         <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${assistantIconBg}`}>
-                            {assistantIcon}
-                        </div>
-                        <div className={`max-w-lg p-3 rounded-lg ${assistantBubbleBg}`}>
-                           <Loader2 className="animate-spin h-5 w-5" />
-                        </div>
-                    </div>
-                )}
+                {isLoading && <div className="flex items-start gap-3"><div className={`h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0 ${isMentorMode ? 'bg-blue-500' : 'bg-white border-2 border-purple-200'}`}><Loader2 className="animate-spin" /></div><div className={`max-w-md p-3 rounded-2xl ${assistantBubbleBg}`}><p className="text-sm">...</p></div></div>}
                 <div ref={messagesEndRef} />
             </main>
             <footer className={`p-2 sm:p-4 ${footerBg}`}>
@@ -372,7 +381,6 @@ const NavButton = ({ icon, label, active, onClick, mode }) => {
     const activeClass = mode === 'mentor' ? mentorActive : coachActive;
     return (
         <button onClick={onClick} className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors ${active ? activeClass : inactive}`}>
-             {icon}
             <span className="hidden sm:inline">{label}</span>
         </button>
     );
