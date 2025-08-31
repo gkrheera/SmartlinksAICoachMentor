@@ -1,2 +1,2 @@
 /*
-Content-Security-Policy: connect-src 'self' https://*.supabase.co https://*.clerk.accounts.dev https://login.microsoftonline.com https://graph.microsoft.com https://res.cdn.office.net data:; frame-src 'self' https://*.teams.microsoft.com https://login.microsoftonline.com;script-src 'self' https://cdn.tailwindcss.com https://statics.teams.cdn.office.net;
+Content-Security-Policy: connect-src 'self' https://.supabase.co https://login.microsoftonline.com https://graph.microsoft.com data: https://res.cdn.office.net;frame-src 'self' https://.teams.microsoft.com;script-src 'self' https://cdn.tailwindcss.com https://statics.teams.cdn.office.net 'sha256-DfqED5FZDnfsgY7VD3XKR70LEGttD5w4cfM531xDJoM=';
