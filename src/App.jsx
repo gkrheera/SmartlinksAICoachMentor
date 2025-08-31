@@ -23,15 +23,15 @@ export default function App() {
     const authAttempted = useRef(false);
     const [authError, setAuthError] = useState(null);
 
-    // This function handles both initial login and retries
-    const handleLogin = async () => {
+    // This function handles the Teams-specific pop-up authentication flow
+    const handleTeamsLogin = async () => {
+        console.log("Attempting Teams native authentication flow.");
         setAuthError(null);
-        authAttempted.current = true; // Mark that we are trying to log in
-        if (isTeams) {
-            console.log("Attempting Teams native authentication flow.");
+        try {
             const { nonce, hashedNonce } = await generateNoncePair();
             sessionStorage.setItem('ssoNonce', nonce);
             const authStartUrl = `${window.location.origin}/auth.html`;
+
             microsoftTeams.authentication.authenticate({
                 url: authStartUrl,
                 width: 600,
@@ -45,34 +45,32 @@ export default function App() {
                 },
                 failureCallback: (reason) => {
                     console.error("Teams authentication failed:", reason);
-                    setAuthError(reason);
+                    setAuthError(reason || "The authentication process was cancelled or failed.");
                 }
             });
-        } else {
-            console.log("Attempting standard browser redirect flow.");
-            instance.loginRedirect(loginRequest);
+        } catch (error) {
+            console.error("Error initiating Teams login:", error);
+            setAuthError("An unexpected error occurred while trying to sign you in via Teams.");
         }
     };
 
     useEffect(() => {
         const initializeAndAuth = async () => {
-             // Prevent re-running the auth flow unnecessarily
-             if (authAttempted.current || accounts.length > 0 || inProgress !== InteractionStatus.None) {
+            if (authAttempted.current || accounts.length > 0 || inProgress !== InteractionStatus.None) {
                 return;
             }
+            authAttempted.current = true;
             
             try {
                 await microsoftTeams.app.initialize();
                 setIsTeams(true);
                 console.log("App is running in Microsoft Teams.");
-                handleLogin(); // Initiate Teams-specific login
+                handleTeamsLogin();
             } catch (error) {
-                console.warn("App is not running in Microsoft Teams. Using standard flow.");
+                console.warn("App is not running in Microsoft Teams. Using standard browser redirect flow.");
                 setIsTeams(false);
-                // This handles the redirect back from Azure AD in a normal browser
                 instance.handleRedirectPromise().catch(err => {
                     console.error("Redirect promise error:", err);
-                    // If there's no auth hash, it means we need to start the login process
                     if (!window.location.hash.includes('code=')) {
                        instance.loginRedirect(loginRequest);
                     }
@@ -82,7 +80,7 @@ export default function App() {
 
         initializeAndAuth();
 
-    }, [instance, inProgress, accounts, isTeams]);
+    }, [instance, inProgress, accounts]);
 
 
     if (inProgress !== InteractionStatus.None && inProgress !== "handleRedirect") {
@@ -94,7 +92,10 @@ export default function App() {
             <div className="flex flex-col items-center justify-center h-screen bg-red-900 text-white p-4 text-center">
                 <h1 className="text-2xl font-bold mb-4">Authentication Error</h1>
                 <p className="max-w-md">{String(authError)}</p>
-                 <button onClick={handleLogin} className="mt-4 bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors">
+                <button 
+                    onClick={() => window.location.reload()} 
+                    className="mt-4 bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors"
+                >
                     Retry
                 </button>
             </div>
@@ -118,7 +119,6 @@ export default function App() {
         </>
     );
 }
-
 
 function AuthenticatedApp() {
     const { instance, accounts } = useMsal();
