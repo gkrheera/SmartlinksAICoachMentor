@@ -11,8 +11,9 @@ export const msalConfig = {
   auth: {
     clientId: clientId,
     authority: `https://login.microsoftonline.com/${tenantId}`,
-    redirectUri: window.location.origin,
-    postLogoutRedirectUri: window.location.origin,
+    // IMPORTANT: Using the specific Netlify URL for production redirects.
+    redirectUri: 'https://smartlinksaicoachmentor.netlify.app/',
+    postLogoutRedirectUri: 'https://smartlinksaicoachmentor.netlify.app/',
     navigateToLoginRequestUrl: false,
   },
   cache: {
@@ -28,8 +29,10 @@ export const msalConfig = {
             console.error(message);
             return;
           case LogLevel.Info:
+            // console.info(message); // De-cluttering console
             return;
           case LogLevel.Verbose:
+            // console.debug(message); // De-cluttering console
             return;
           case LogLevel.Warning:
             console.warn(message);
