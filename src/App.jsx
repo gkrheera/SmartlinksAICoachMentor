@@ -19,40 +19,8 @@ async function generateNoncePair() {
 
 export default function App() {
     const { instance, inProgress, accounts } = useMsal();
-    const [isTeams, setIsTeams] = useState(false);
     const authAttempted = useRef(false);
     const [authError, setAuthError] = useState(null);
-
-    // This function handles the Teams-specific pop-up authentication flow
-    const handleTeamsLogin = async () => {
-        console.log("Attempting Teams native authentication flow.");
-        setAuthError(null);
-        try {
-            const { nonce, hashedNonce } = await generateNoncePair();
-            sessionStorage.setItem('ssoNonce', nonce);
-            const authStartUrl = `${window.location.origin}/auth.html`;
-
-            microsoftTeams.authentication.authenticate({
-                url: authStartUrl,
-                width: 600,
-                height: 535,
-                successCallback: (result) => {
-                    console.log("Teams auth successful, processing result...");
-                    instance.handleRedirectPromise(result).catch(err => {
-                         console.error("Error processing redirect from Teams popup:", err);
-                         setAuthError(err.errorMessage || "Failed to process login response from Teams.");
-                    });
-                },
-                failureCallback: (reason) => {
-                    console.error("Teams authentication failed:", reason);
-                    setAuthError(reason || "The authentication process was cancelled or failed.");
-                }
-            });
-        } catch (error) {
-            console.error("Error initiating Teams login:", error);
-            setAuthError("An unexpected error occurred while trying to sign you in via Teams.");
-        }
-    };
 
     useEffect(() => {
         const initializeAndAuth = async () => {
@@ -63,16 +31,23 @@ export default function App() {
             
             try {
                 await microsoftTeams.app.initialize();
-                setIsTeams(true);
-                console.log("App is running in Microsoft Teams.");
-                handleTeamsLogin();
+                console.log("App is running in Microsoft Teams. Attempting popup login.");
+                
+                // Use MSAL's built-in popup method, which is more reliable inside Teams.
+                // It will use the redirectUri specified in the loginRequest object.
+                instance.loginPopup(loginRequest).catch(err => {
+                    console.error("MSAL loginPopup failed:", err);
+                    setAuthError(err.errorMessage || "Login failed or was cancelled.");
+                });
+
             } catch (error) {
                 console.warn("App is not running in Microsoft Teams. Using standard browser redirect flow.");
-                setIsTeams(false);
+                // Fallback for when not in Teams
                 instance.handleRedirectPromise().catch(err => {
                     console.error("Redirect promise error:", err);
+                    // Only redirect if there's no auth response in the URL
                     if (!window.location.hash.includes('code=')) {
-                       instance.loginRedirect(loginRequest);
+                       instance.loginRedirect(msalConfig.auth.redirectUri);
                     }
                 });
             }
@@ -115,10 +90,11 @@ export default function App() {
                        <p className="mb-8">Attempting to sign you in...</p>
                     </div>
                 </div>
-            </UnauthenticatedTemplate>
+            </AuthenticatedTemplate>
         </>
     );
 }
+
 
 function AuthenticatedApp() {
     const { instance, accounts } = useMsal();
@@ -131,7 +107,7 @@ function AuthenticatedApp() {
             if (accounts.length > 0) {
                 try {
                     const response = await instance.acquireTokenSilent({
-                        ...loginRequest,
+                        ...apiRequest, // Use apiRequest for custom scopes
                         account: accounts[0]
                     });
 
@@ -139,10 +115,13 @@ function AuthenticatedApp() {
                         throw new Error("ID Token not found in MSAL response.");
                     }
                     
+                    const { nonce } = await generateNoncePair();
+                    sessionStorage.setItem('ssoNonce', nonce);
+
                     const { data, error } = await supabase.auth.signInWithIdToken({
                         provider: 'azure',
                         token: response.idToken,
-                        nonce: sessionStorage.getItem('ssoNonce')
+                        nonce: nonce
                     });
 
                     if (error) throw error;
@@ -153,9 +132,7 @@ function AuthenticatedApp() {
                 } catch (e) {
                     console.error("Error acquiring token or setting Supabase session:", e);
                      if (e instanceof InteractionRequiredAuthError) {
-                        const { nonce, hashedNonce } = await generateNoncePair();
-                        sessionStorage.setItem('ssoNonce', nonce);
-                        instance.loginPopup({...loginRequest, nonce: hashedNonce});
+                        instance.loginPopup(loginRequest).catch(err => setSupabaseError(err.errorMessage));
                     }
                     setSupabaseError(e.message);
                 }
@@ -174,6 +151,12 @@ function AuthenticatedApp() {
             <div className="flex flex-col items-center justify-center h-screen bg-red-900 text-white p-4 text-center">
                 <h1 className="text-2xl font-bold mb-4">Error Configuring Session</h1>
                 <p>{supabaseError}</p>
+                 <button 
+                    onClick={() => window.location.reload()} 
+                    className="mt-4 bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors"
+                >
+                    Retry
+                </button>
             </div>
         );
     }
@@ -189,6 +172,8 @@ function AuthenticatedApp() {
     return <MainInterface user={accounts[0]} initialMode={modeSelected} onModeChange={handleModeSelect} />;
 }
 
+// ... The rest of your components (MainInterface, ChatInterface, etc.) remain unchanged ...
+// ... I've omitted them for brevity but you should keep them in your file ...
 function MainInterface({ user, initialMode, onModeChange }) {
     const [currentMode, setCurrentMode] = useState(initialMode);
 
@@ -293,6 +278,7 @@ function ChatInterface({ mode }) {
         }
     };
     
+    // ... (Styling variables remain the same) ...
     const isMentorMode = mode === 'mentor';
     const bgColor = isMentorMode ? 'bg-gray-800' : 'bg-purple-50';
     const textColor = isMentorMode ? 'text-gray-100' : 'text-gray-900';
