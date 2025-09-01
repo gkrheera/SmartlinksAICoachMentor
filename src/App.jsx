@@ -6,6 +6,15 @@ import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Light
 import * as microsoftTeams from "@microsoft/teams-js";
 import { loginRequest, apiRequest, msalConfig } from './authConfig';
 
+// Helper function to generate a nonce pair for secure authentication
+async function generateNonce() {
+  const nonce = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
+  // Store the raw nonce. It will be sent with the login request.
+  // MSAL will hash it internally for the PKCE flow.
+  sessionStorage.setItem('ssoNonce', nonce);
+  return nonce;
+}
+
 export default function App() {
     const { instance, inProgress, accounts } = useMsal();
     const authAttempted = useRef(false);
@@ -22,7 +31,14 @@ export default function App() {
                 await microsoftTeams.app.initialize();
                 console.log("App is running in Microsoft Teams. Attempting popup login.");
                 
-                instance.loginPopup(loginRequest).catch(err => {
+                // **THE FIX IS HERE: Generate nonce BEFORE login request**
+                const nonce = await generateNonce();
+                const requestWithNonce = {
+                    ...loginRequest,
+                    nonce: nonce,
+                };
+
+                instance.loginPopup(requestWithNonce).catch(err => {
                     console.error("MSAL loginPopup failed:", err);
                     setAuthError(err.errorMessage || "Login failed or was cancelled.");
                 });
@@ -100,15 +116,13 @@ function AuthenticatedApp() {
                         throw new Error("ID Token not found in MSAL response.");
                     }
                     
-                    // **THE FIX IS HERE**
-                    // Extract the nonce from the ID token claims provided by MSAL after login.
-                    const nonce = response.idTokenClaims.nonce;
-
+                    // **THE FIX IS HERE: Retrieve the SAME nonce from sessionStorage**
+                    const nonce = sessionStorage.getItem('ssoNonce');
                     if (!nonce) {
-                        throw new Error("Nonce not found in ID token claims. This is required for Supabase verification.");
+                         throw new Error("Nonce not found in session storage. Authentication cannot be verified.");
                     }
 
-                    // Pass both the token and the extracted nonce to Supabase.
+                    // Now, the nonce in the token and the nonce we provide should match.
                     const { data, error } = await supabase.auth.signInWithIdToken({
                         provider: 'azure',
                         token: response.idToken,
@@ -119,6 +133,7 @@ function AuthenticatedApp() {
                     if (!data.session) throw new Error("Supabase session could not be established.");
                     
                     setIsSupabaseReady(true);
+                    sessionStorage.removeItem('ssoNonce'); // Clean up the nonce after use
 
                 } catch (e) {
                     console.error("Error acquiring token or setting Supabase session:", e);
