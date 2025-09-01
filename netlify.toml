@@ -16,7 +16,7 @@
   [headers.values]
     Content-Security-Policy = """
       default-src 'self';
-      script-src 'self' https://cdn.tailwindcss.com https://res.cdn.office.net 'sha256-gcCBwUqOJYFErTy5b059U3NepWnpOYtvvdMm2Q/JBdk=';
+      script-src 'self' https://cdn.tailwindcss.com https://res.cdn.office.net https://alcdn.msauth.net 'sha256-0eJU2zZpfKBfbNRq+vJnDQAT/0vJFW35AjFiiLEB2U=';
       connect-src 'self' https://jfgytmiglggzirfohwug.supabase.co wss://*.supabase.co https://login.microsoftonline.com https://graph.microsoft.com https://res.cdn.office.net;
       frame-src 'self' https://teams.microsoft.com;
       style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
