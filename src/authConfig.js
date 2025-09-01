@@ -11,13 +11,14 @@ export const msalConfig = {
   auth: {
     clientId: clientId,
     authority: `https://login.microsoftonline.com/${tenantId}`,
-    redirectUri: "https://smartlinksaicoachmentor.netlify.app/",
-    postLogoutRedirectUri: "https://smartlinksaicoachmentor.netlify.app/",
-    navigateToLoginRequestUrl: false,
+    // This is the only redirect URI needed for the new flow
+    redirectUri: "[https://smartlinksaicoachmentor.netlify.app/](https://smartlinksaicoachmentor.netlify.app/)", 
+    postLogoutRedirectUri: "[https://smartlinksaicoachmentor.netlify.app/](https://smartlinksaicoachmentor.netlify.app/)",
+    navigateToLoginRequestUrl: true, // This should be true for redirect flow
   },
   cache: {
     cacheLocation: 'sessionStorage',
-    storeAuthStateInCookie: true,
+    storeAuthStateInCookie: false, 
   },
   system: {
     loggerOptions: {
@@ -26,12 +27,6 @@ export const msalConfig = {
         switch (level) {
           case LogLevel.Error:
             console.error(message);
-            return;
-          case LogLevel.Info:
-             // console.info(message); // De-clutter console
-            return;
-          case LogLevel.Verbose:
-             // console.debug(message); // De-clutter console
             return;
           case LogLevel.Warning:
             console.warn(message);
@@ -46,10 +41,8 @@ export const msalConfig = {
 
 export const loginRequest = {
   scopes: ['openid', 'profile', 'email']
-  // Nonce will be added dynamically in the App.jsx component
 };
 
 export const apiRequest = {
     scopes: [`api://${clientId}/access_as_user`]
 };
-
