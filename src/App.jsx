@@ -4,7 +4,7 @@ import { InteractionStatus, InteractionRequiredAuthError } from '@azure/msal-bro
 import { supabase } from './supabaseClient';
 import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Lightbulb, UserCheck } from 'lucide-react';
 import * as microsoftTeams from "@microsoft/teams-js";
-import { loginRequest, apiRequest } from './authConfig';
+import { loginRequest, apiRequest, msalConfig } from './authConfig';
 
 export default function App() {
     const { instance, inProgress, accounts } = useMsal();
@@ -100,11 +100,19 @@ function AuthenticatedApp() {
                         throw new Error("ID Token not found in MSAL response.");
                     }
                     
-                    // The nonce is handled and verified by MSAL during the loginPopup flow.
-                    // We do not need to generate or pass our own nonce to Supabase here.
+                    // **THE FIX IS HERE**
+                    // Extract the nonce from the ID token claims provided by MSAL after login.
+                    const nonce = response.idTokenClaims.nonce;
+
+                    if (!nonce) {
+                        throw new Error("Nonce not found in ID token claims. This is required for Supabase verification.");
+                    }
+
+                    // Pass both the token and the extracted nonce to Supabase.
                     const { data, error } = await supabase.auth.signInWithIdToken({
                         provider: 'azure',
                         token: response.idToken,
+                        nonce: nonce,
                     });
 
                     if (error) throw error;
