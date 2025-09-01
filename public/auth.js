@@ -5,7 +5,7 @@
 const msalInstance = new msal.PublicClientApplication({
     auth: {
         // You MUST provide clientId here for the instance to be created.
-        clientId: "d1109913-902e-4552-8756-2e8693c2e176" // Your actual Client ID
+        clientId: "ad2de1bb-a645-4140-996c-45a61436c5ba" // Your actual Client ID
     },
     cache: {
         cacheLocation: "sessionStorage",
