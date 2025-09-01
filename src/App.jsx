@@ -3,79 +3,28 @@ import { useMsal, AuthenticatedTemplate, UnauthenticatedTemplate } from '@azure/
 import { InteractionStatus, InteractionRequiredAuthError } from '@azure/msal-browser';
 import { supabase } from './supabaseClient';
 import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Lightbulb, UserCheck } from 'lucide-react';
-import * as microsoftTeams from "@microsoft/teams-js";
-import { loginRequest, apiRequest, msalConfig } from './authConfig';
-
-// Helper function to generate a nonce pair for secure authentication
-async function generateNonce() {
-  const nonce = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
-  // Store the raw nonce. It will be sent with the login request.
-  // MSAL will hash it internally for the PKCE flow.
-  sessionStorage.setItem('ssoNonce', nonce);
-  return nonce;
-}
+import { loginRequest, apiRequest } from './authConfig';
 
 export default function App() {
     const { instance, inProgress, accounts } = useMsal();
     const authAttempted = useRef(false);
-    const [authError, setAuthError] = useState(null);
 
     useEffect(() => {
-        const initializeAndAuth = async () => {
-            if (authAttempted.current || accounts.length > 0 || inProgress !== InteractionStatus.None) {
-                return;
-            }
+        // This effect handles the redirect response from Azure AD
+        if (inProgress === InteractionStatus.None && !authAttempted.current) {
             authAttempted.current = true;
-            
-            try {
-                await microsoftTeams.app.initialize();
-                console.log("App is running in Microsoft Teams. Attempting popup login.");
-                
-                // **THE FIX IS HERE: Generate nonce BEFORE login request**
-                const nonce = await generateNonce();
-                const requestWithNonce = {
-                    ...loginRequest,
-                    nonce: nonce,
-                };
-
-                instance.loginPopup(requestWithNonce).catch(err => {
-                    console.error("MSAL loginPopup failed:", err);
-                    setAuthError(err.errorMessage || "Login failed or was cancelled.");
-                });
-
-            } catch (error) {
-                console.warn("App is not running in Microsoft Teams. Using standard browser redirect flow.");
-                instance.handleRedirectPromise().catch(err => {
-                    console.error("Redirect promise error:", err);
-                    if (!window.location.hash.includes('code=')) {
-                       instance.loginRedirect(msalConfig.auth.redirectUri);
-                    }
-                });
-            }
-        };
-
-        initializeAndAuth();
-
+            instance.handleRedirectPromise().catch(err => {
+                console.error("Redirect promise error:", err);
+                // If there's no auth response, and we aren't logged in, redirect to login
+                if (accounts.length === 0) {
+                    instance.loginRedirect(loginRequest);
+                }
+            });
+        }
     }, [instance, inProgress, accounts]);
-
 
     if (inProgress !== InteractionStatus.None && inProgress !== "handleRedirect") {
         return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader2 className="animate-spin mr-2" /> Authenticating...</div>;
-    }
-    
-    if (authError) {
-       return (
-            <div className="flex flex-col items-center justify-center h-screen bg-red-900 text-white p-4 text-center">
-                <h1 className="text-2xl font-bold mb-4">Authentication Error</h1>
-                <p className="max-w-md">{String(authError)}</p>
-                <button 
-                    onClick={() => window.location.reload()} 
-                    className="mt-4 bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors"
-                >
-                    Retry
-                </button>
-            </div>
-        );
     }
 
     return (
@@ -86,16 +35,15 @@ export default function App() {
             <UnauthenticatedTemplate>
                  <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
                     <h1 className="text-3xl font-bold mb-4">AI Coach & Mentor</h1>
-                     <div className="text-center">
+                    <div className="text-center">
                        <Loader2 className="animate-spin h-8 w-8 mx-auto mb-4" />
-                       <p className="mb-8">Attempting to sign you in...</p>
+                       <p className="mb-8">Please wait, redirecting to sign-in page...</p>
                     </div>
                 </div>
             </UnauthenticatedTemplate>
         </>
     );
 }
-
 
 function AuthenticatedApp() {
     const { instance, accounts } = useMsal();
@@ -107,38 +55,31 @@ function AuthenticatedApp() {
         const setSupabaseSession = async () => {
             if (accounts.length > 0) {
                 try {
+                    // Acquire the ID token silently
                     const response = await instance.acquireTokenSilent({
-                        ...apiRequest, // Use apiRequest for custom scopes
+                        ...loginRequest,
                         account: accounts[0]
                     });
 
                     if (!response.idToken) {
                         throw new Error("ID Token not found in MSAL response.");
                     }
-                    
-                    // **THE FIX IS HERE: Retrieve the SAME nonce from sessionStorage**
-                    const nonce = sessionStorage.getItem('ssoNonce');
-                    if (!nonce) {
-                         throw new Error("Nonce not found in session storage. Authentication cannot be verified.");
-                    }
 
-                    // Now, the nonce in the token and the nonce we provide should match.
+                    // Sign into Supabase without the nonce
                     const { data, error } = await supabase.auth.signInWithIdToken({
                         provider: 'azure',
                         token: response.idToken,
-                        nonce: nonce,
                     });
 
                     if (error) throw error;
                     if (!data.session) throw new Error("Supabase session could not be established.");
                     
                     setIsSupabaseReady(true);
-                    sessionStorage.removeItem('ssoNonce'); // Clean up the nonce after use
 
                 } catch (e) {
-                    console.error("Error acquiring token or setting Supabase session:", e);
+                    console.error("Error setting Supabase session:", e);
                      if (e instanceof InteractionRequiredAuthError) {
-                        instance.loginPopup(loginRequest).catch(err => setSupabaseError(err.errorMessage));
+                        instance.loginRedirect(loginRequest);
                     }
                     setSupabaseError(e.message);
                 }
@@ -158,10 +99,10 @@ function AuthenticatedApp() {
                 <h1 className="text-2xl font-bold mb-4">Error Configuring Session</h1>
                 <p>{supabaseError}</p>
                  <button 
-                    onClick={() => window.location.reload()} 
+                    onClick={() => instance.loginRedirect(loginRequest)} 
                     className="mt-4 bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors"
                 >
-                    Retry
+                    Retry Login
                 </button>
             </div>
         );
@@ -178,7 +119,9 @@ function AuthenticatedApp() {
     return <MainInterface user={accounts[0]} initialMode={modeSelected} onModeChange={handleModeSelect} />;
 }
 
-// ... The rest of your components (MainInterface, ChatInterface, etc.) remain unchanged ...
+// --- NO CHANGES ARE NEEDED FOR THE FOLLOWING COMPONENTS ---
+// (MainInterface, ChatInterface, ModeSelection, ModeCard, NavButton)
+
 function MainInterface({ user, initialMode, onModeChange }) {
     const [currentMode, setCurrentMode] = useState(initialMode);
 
