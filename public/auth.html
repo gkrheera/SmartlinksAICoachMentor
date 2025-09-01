@@ -18,46 +18,8 @@
 </head>
 <body>
   <p>Please wait while we complete your sign-in...</p>
-  <script>
-    // This script runs inside the Teams-managed authentication popup.
-    // It's separate from the main React app.
 
-    // 1. Initialize a temporary MSAL instance configured to NOT handle the redirect automatically.
-    // This is the key change: it ensures the hash is available to be passed back to the main app.
-    const msalInstance = new msal.PublicClientApplication({
-        auth: {
-            // You MUST provide clientId here for the instance to be created.
-            // It doesn't need to be from env vars, as this is just for configuration.
-            clientId: "YOUR_REACT_APP_AZURE_CLIENT_ID" // Replace with your actual Client ID
-        },
-        cache: {
-            cacheLocation: "sessionStorage",
-            storeAuthStateInCookie: false,
-        },
-    });
-    msalInstance.handleRedirectPromise().catch((error) => {
-        // This catch is expected if the page is opened in a popup.
-        console.info("MSAL popup redirect handler initialized.");
-    });
-
-
-    // 2. Initialize the Teams SDK
-    microsoftTeams.app.initialize().then(() => {
-      console.log("Auth-popup initialized. Checking for auth hash...");
-      
-      // 3. Check for the authentication hash in the URL.
-      if (window.location.hash) {
-        // If a hash is found, pass it back to the main app window.
-        microsoftTeams.authentication.notifySuccess(window.location.hash);
-      } else {
-        // If no hash, something went wrong.
-        microsoftTeams.authentication.notifyFailure("No authentication hash found in the redirect URL.");
-      }
-    }).catch((error) => {
-        console.error("Failed to initialize Teams SDK in auth popup:", error);
-        microsoftTeams.authentication.notifyFailure("SDK initialization failed.");
-    });
-  </script>
+  <!-- Load the external script -->
+  <script src="/auth.js"></script>
 </body>
 </html>
-
