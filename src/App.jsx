@@ -90,7 +90,7 @@ export default function App() {
                        <p className="mb-8">Attempting to sign you in...</p>
                     </div>
                 </div>
-            </AuthenticatedTemplate>
+            </UnauthenticatedTemplate>
         </>
     );
 }
