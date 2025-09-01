@@ -14,12 +14,12 @@
   for = "/"
   [headers.values]
     Content-Security-Policy = """
-      default-src 'self';
-      script-src 'self' https://cdn.tailwindcss.com https://res.cdn.office.net https://alcdn.msauth.net https://statics.teams.cdn.office.net browser.events.data.microsoft.com;
-      connect-src 'self' https://jfgytmiglggzirfohwug.supabase.co wss://*.supabase.co https://login.microsoftonline.com https://graph.microsoft.com https://res.cdn.office.net https://browser.events.data.microsoft.com;
-      frame-src 'self' https://teams.microsoft.com;
-      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-      font-src 'self' https://fonts.gstatic.com;
-      img-src 'self' data:;
-      wasm-src 'self' 'unsafe-eval';
+     default-src 'self';
+script-src 'self' https://cdn.tailwindcss.com https://res.cdn.office.net https://alcdn.msauth.net https://statics.teams.cdn.office.net browser.events.data.microsoft.com;
+connect-src 'self' https://jfgytmiglggzirfohwug.supabase.co wss://.supabase.co https://login.microsoftonline.com https://graph.microsoft.com https://res.cdn.office.net https://www.google.com/search?q=https://browser.events.data.microsoft.com;
+frame-src 'self' https://teams.microsoft.com;
+style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+font-src 'self' https://fonts.gstatic.com;
+img-src 'self' data:;
+wasm-src 'self' 'unsafe-eval';
     """
