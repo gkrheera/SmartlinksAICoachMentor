@@ -6,17 +6,6 @@ import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Light
 import * as microsoftTeams from "@microsoft/teams-js";
 import { loginRequest, apiRequest } from './authConfig';
 
-// Helper function to generate a nonce pair for secure authentication
-async function generateNoncePair() {
-  const nonce = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
-  const encoder = new TextEncoder();
-  const encodedNonce = encoder.encode(nonce);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', encodedNonce);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashedNonce = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-  return { nonce, hashedNonce };
-}
-
 export default function App() {
     const { instance, inProgress, accounts } = useMsal();
     const authAttempted = useRef(false);
@@ -33,8 +22,6 @@ export default function App() {
                 await microsoftTeams.app.initialize();
                 console.log("App is running in Microsoft Teams. Attempting popup login.");
                 
-                // Use MSAL's built-in popup method, which is more reliable inside Teams.
-                // It will use the redirectUri specified in the loginRequest object.
                 instance.loginPopup(loginRequest).catch(err => {
                     console.error("MSAL loginPopup failed:", err);
                     setAuthError(err.errorMessage || "Login failed or was cancelled.");
@@ -42,10 +29,8 @@ export default function App() {
 
             } catch (error) {
                 console.warn("App is not running in Microsoft Teams. Using standard browser redirect flow.");
-                // Fallback for when not in Teams
                 instance.handleRedirectPromise().catch(err => {
                     console.error("Redirect promise error:", err);
-                    // Only redirect if there's no auth response in the URL
                     if (!window.location.hash.includes('code=')) {
                        instance.loginRedirect(msalConfig.auth.redirectUri);
                     }
@@ -115,13 +100,11 @@ function AuthenticatedApp() {
                         throw new Error("ID Token not found in MSAL response.");
                     }
                     
-                    const { nonce } = await generateNoncePair();
-                    sessionStorage.setItem('ssoNonce', nonce);
-
+                    // The nonce is handled and verified by MSAL during the loginPopup flow.
+                    // We do not need to generate or pass our own nonce to Supabase here.
                     const { data, error } = await supabase.auth.signInWithIdToken({
                         provider: 'azure',
                         token: response.idToken,
-                        nonce: nonce
                     });
 
                     if (error) throw error;
@@ -173,7 +156,6 @@ function AuthenticatedApp() {
 }
 
 // ... The rest of your components (MainInterface, ChatInterface, etc.) remain unchanged ...
-// ... I've omitted them for brevity but you should keep them in your file ...
 function MainInterface({ user, initialMode, onModeChange }) {
     const [currentMode, setCurrentMode] = useState(initialMode);
 
@@ -278,7 +260,6 @@ function ChatInterface({ mode }) {
         }
     };
     
-    // ... (Styling variables remain the same) ...
     const isMentorMode = mode === 'mentor';
     const bgColor = isMentorMode ? 'bg-gray-800' : 'bg-purple-50';
     const textColor = isMentorMode ? 'text-gray-100' : 'text-gray-900';
