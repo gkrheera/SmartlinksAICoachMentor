@@ -1,6 +1,6 @@
 import { LogLevel } from '@azure/msal-browser';
 
-const clientId = process.env.REACT_APP_AZURE_CLIENT_ID;
+const clientId = "ad2de1bb-a645-4140-996c-45a61436c5ba";
 const tenantId = process.env.REACT_APP_AZURE_TENANT_ID;
 
 if (!clientId || !tenantId) {
@@ -11,7 +11,6 @@ export const msalConfig = {
   auth: {
     clientId: clientId,
     authority: `https://login.microsoftonline.com/${tenantId}`,
-    // This is the default redirect URI for the whole application.
     redirectUri: "https://smartlinksaicoachmentor.netlify.app/",
     postLogoutRedirectUri: "https://smartlinksaicoachmentor.netlify.app/",
     navigateToLoginRequestUrl: false,
@@ -29,10 +28,10 @@ export const msalConfig = {
             console.error(message);
             return;
           case LogLevel.Info:
-            // Suppress verbose info logs
+             // console.info(message); // De-clutter console
             return;
           case LogLevel.Verbose:
-            // Suppress verbose logs
+             // console.debug(message); // De-clutter console
             return;
           case LogLevel.Warning:
             console.warn(message);
@@ -45,11 +44,9 @@ export const msalConfig = {
   },
 };
 
-// This request is specifically for the pop-up login flow.
-// It explicitly tells MSAL where the pop-up will be redirected.
 export const loginRequest = {
-  scopes: ['openid', 'profile', 'email'],
-  redirectUri: "https://smartlinksaicoachmentor.netlify.app/auth.html"
+  scopes: ['openid', 'profile', 'email']
+  // Nonce will be added dynamically in the App.jsx component
 };
 
 export const apiRequest = {
