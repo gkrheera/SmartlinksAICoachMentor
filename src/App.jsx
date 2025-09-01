@@ -5,17 +5,33 @@ import { supabase } from './supabaseClient';
 import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Lightbulb, UserCheck } from 'lucide-react';
 import { loginRequest, apiRequest } from './authConfig';
 
-export default function App() {
+
+// This component will be rendered when the app is in an iframe, to break out of it.
+function IFrameRedirect() {
+    useEffect(() => {
+        console.log("App is in an iframe, redirecting top window...");
+        window.top.location.href = window.location.href;
+    }, []);
+
+    return (
+        <div className="flex items-center justify-center h-screen bg-gray-900 text-white">
+            <Loader2 className="animate-spin mr-2" /> Redirecting to the full application...
+        </div>
+    );
+}
+
+function MainApp() {
     const { instance, inProgress, accounts } = useMsal();
     const authAttempted = useRef(false);
 
     useEffect(() => {
-        // This effect handles the redirect response from Azure AD
+        // This effect handles the redirect response from Azure AD after the user logs in
         instance.handleRedirectPromise().catch(err => {
             console.error("Redirect promise error:", err);
         });
 
-        // If the redirect promise is handled and we're still not logged in, initiate login
+        // If not logged in and not currently authenticating, start the login redirect.
+        // This now only runs in the top-level window.
         if (inProgress === InteractionStatus.None && accounts.length === 0 && !authAttempted.current) {
             authAttempted.current = true;
             instance.loginRedirect(loginRequest);
@@ -37,19 +53,25 @@ export default function App() {
                     <h1 className="text-3xl font-bold mb-4">AI Coach & Mentor</h1>
                     <div className="text-center">
                        <Loader2 className="animate-spin h-8 w-8 mx-auto mb-4" />
-                       <p className="mb-8">Please wait while we sign you in...</p>
-                       <button
-                        onClick={() => instance.loginRedirect(loginRequest)}
-                        className="bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors"
-                       >
-                           Sign In
-                       </button>
+                       <p className="mb-8">Please wait while we prepare the sign-in page...</p>
                     </div>
                 </div>
             </UnauthenticatedTemplate>
         </>
     );
 }
+
+
+export default function App() {
+    // If the app is loaded in an iframe (like MS Teams), render the redirect component.
+    // Otherwise, render the main application.
+    if (window.top !== window.self) {
+        return <IFrameRedirect />;
+    } else {
+        return <MainApp />;
+    }
+}
+
 
 function AuthenticatedApp() {
     const { instance, accounts } = useMsal();
@@ -316,3 +338,4 @@ const NavButton = ({ icon, label, active, onClick, mode }) => {
         </button>
     );
 };
+
