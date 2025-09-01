@@ -11,9 +11,9 @@ export const msalConfig = {
   auth: {
     clientId: clientId,
     authority: `https://login.microsoftonline.com/${tenantId}`,
-    // IMPORTANT: Using the specific Netlify URL for production redirects.
-    redirectUri: 'https://smartlinksaicoachmentor.netlify.app/',
-    postLogoutRedirectUri: 'https://smartlinksaicoachmentor.netlify.app/',
+    // This is the default redirect URI for the whole application.
+    redirectUri: "https://smartlinksaicoachmentor.netlify.app/",
+    postLogoutRedirectUri: "https://smartlinksaicoachmentor.netlify.app/",
     navigateToLoginRequestUrl: false,
   },
   cache: {
@@ -29,8 +29,10 @@ export const msalConfig = {
             console.error(message);
             return;
           case LogLevel.Info:
+            // Suppress verbose info logs
             return;
           case LogLevel.Verbose:
+            // Suppress verbose logs
             return;
           case LogLevel.Warning:
             console.warn(message);
@@ -43,8 +45,11 @@ export const msalConfig = {
   },
 };
 
+// This request is specifically for the pop-up login flow.
+// It explicitly tells MSAL where the pop-up will be redirected.
 export const loginRequest = {
-  scopes: ['openid', 'profile', 'email']
+  scopes: ['openid', 'profile', 'email'],
+  redirectUri: "https://smartlinksaicoachmentor.netlify.app/auth.html"
 };
 
 export const apiRequest = {
