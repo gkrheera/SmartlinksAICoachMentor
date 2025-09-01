@@ -11,19 +11,19 @@ export default function App() {
 
     useEffect(() => {
         // This effect handles the redirect response from Azure AD
-        if (inProgress === InteractionStatus.None && !authAttempted.current) {
+        instance.handleRedirectPromise().catch(err => {
+            console.error("Redirect promise error:", err);
+        });
+
+        // If the redirect promise is handled and we're still not logged in, initiate login
+        if (inProgress === InteractionStatus.None && accounts.length === 0 && !authAttempted.current) {
             authAttempted.current = true;
-            instance.handleRedirectPromise().catch(err => {
-                console.error("Redirect promise error:", err);
-                // If there's no auth response, and we aren't logged in, redirect to login
-                if (accounts.length === 0) {
-                    instance.loginRedirect(loginRequest);
-                }
-            });
+            instance.loginRedirect(loginRequest);
         }
     }, [instance, inProgress, accounts]);
 
-    if (inProgress !== InteractionStatus.None && inProgress !== "handleRedirect") {
+
+    if (inProgress !== InteractionStatus.None) {
         return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader2 className="animate-spin mr-2" /> Authenticating...</div>;
     }
 
@@ -37,7 +37,13 @@ export default function App() {
                     <h1 className="text-3xl font-bold mb-4">AI Coach & Mentor</h1>
                     <div className="text-center">
                        <Loader2 className="animate-spin h-8 w-8 mx-auto mb-4" />
-                       <p className="mb-8">Please wait, redirecting to sign-in page...</p>
+                       <p className="mb-8">Please wait while we sign you in...</p>
+                       <button
+                        onClick={() => instance.loginRedirect(loginRequest)}
+                        className="bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors"
+                       >
+                           Sign In
+                       </button>
                     </div>
                 </div>
             </UnauthenticatedTemplate>
@@ -65,7 +71,7 @@ function AuthenticatedApp() {
                         throw new Error("ID Token not found in MSAL response.");
                     }
 
-                    // Sign into Supabase without the nonce
+                    // Sign into Supabase with the ID token. Supabase handles nonce validation.
                     const { data, error } = await supabase.auth.signInWithIdToken({
                         provider: 'azure',
                         token: response.idToken,
@@ -310,4 +316,3 @@ const NavButton = ({ icon, label, active, onClick, mode }) => {
         </button>
     );
 };
-
