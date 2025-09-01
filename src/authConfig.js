@@ -14,7 +14,7 @@ export const msalConfig = {
     // This is the only redirect URI needed for the new flow
    redirectUri: "https://smartlinksaicoachmentor.netlify.app/", 
     postLogoutRedirectUri: "https://smartlinksaicoachmentor.netlify.app/",
-    navigateToLoginRequestUrl: true, // This should be true for redirect flow
+    navigateToLoginRequestUrl: false, // This should be false for redirect flow
   },
   cache: {
     cacheLocation: 'sessionStorage',
@@ -46,3 +46,4 @@ export const loginRequest = {
 export const apiRequest = {
     scopes: [`api://${clientId}/access_as_user`]
 };
+
