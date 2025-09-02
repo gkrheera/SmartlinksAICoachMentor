@@ -121,16 +121,22 @@ function AuthenticatedApp() {
         sessionStorage.setItem('appMode', mode);
     };
 
+    const handleLogout = () => {
+        supabase.auth.signOut();
+        instance.logoutRedirect();
+    };
+
     if (supabaseError) {
         return (
             <div className="flex flex-col items-center justify-center h-screen bg-red-900 text-white p-4 text-center">
                 <h1 className="text-2xl font-bold mb-4">Error Configuring Session</h1>
-                <p>{supabaseError}</p>
+                <p className="mb-4">{supabaseError}</p>
+                <p className="text-sm mb-6">There was a problem establishing a secure session. Please try signing out and signing back in.</p>
                  <button 
-                    onClick={() => instance.loginRedirect(loginRequest)} 
-                    className="mt-4 bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors"
+                    onClick={handleLogout} 
+                    className="mt-4 bg-gray-600 text-white font-bold py-2 px-4 rounded hover:bg-gray-700 transition-colors"
                 >
-                    Retry Login
+                    Sign Out
                 </button>
             </div>
         );
