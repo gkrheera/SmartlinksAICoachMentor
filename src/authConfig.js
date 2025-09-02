@@ -1,7 +1,8 @@
 import { LogLevel } from '@azure/msal-browser';
 
 const clientId = "ad2de1bb-a645-4140-996c-45a61436c5ba";
-const tenantId = process.env.REACT_APP_AZURE_TENANT_ID;
+// IMPORTANT: Ensure your Tenant ID is correctly set in your environment variables.
+const tenantId = process.env.REACT_APP_AZURE_TENANT_ID; 
 
 if (!clientId || !tenantId) {
   throw new Error("Azure AD configuration is missing. Please check your environment variables.");
@@ -11,9 +12,10 @@ export const msalConfig = {
   auth: {
     clientId: clientId,
     authority: `https://login.microsoftonline.com/${tenantId}`,
-    redirectUri: "https://smartlinksaicoachmentor.netlify.app/", 
-    postLogoutRedirectUri: "https://smartlinksaicoachmentor.netlify.app/",
-    navigateToLoginRequestUrl: false, // Important for redirect flow
+    // This is the page that will open in the popup for authentication
+    redirectUri: "/auth.html", 
+    postLogoutRedirectUri: "/",
+    navigateToLoginRequestUrl: false,
   },
   cache: {
     cacheLocation: 'sessionStorage',
