@@ -9,13 +9,16 @@
     <script type="text/javascript">
         // This page is opened in a popup and handles the Azure AD redirect.
         
-        // 1. Initialize the Teams SDK and MSAL
+        // IMPORTANT: Because this is a static HTML file, it cannot read environment variables.
+        // You MUST ensure that the `clientId` and `tenantId` below match the values in your .env file.
+        const clientId = "ad2de1bb-a645-4140-996c-45a61436c5ba";
+        const tenantId = "0db7b087-e47f-44cd-85e3-ce0bd7cb19c7"; // <-- Replace with your actual Tenant ID
+
         microsoftTeams.app.initialize().then(() => {
             const msalConfig = {
                 auth: {
-                    // IMPORTANT: This clientId must match your main app's clientId
-                    clientId: "ad2de1bb-a645-4140-996c-45a61436c5ba",
-                    authority: `https://login.microsoftonline.com/0db7b087-e47f-44cd-85e3-ce0bd7cb19c7`,
+                    clientId: clientId,
+                    authority: `https://login.microsoftonline.com/${tenantId}`,
                     redirectUri: window.location.origin + "/auth.html"
                 },
                 cache: {
@@ -26,14 +29,11 @@
 
             const msalInstance = new msal.PublicClientApplication(msalConfig);
 
-            // 2. Handle the redirect promise from Azure AD
             msalInstance.handleRedirectPromise()
                 .then((response) => {
                     if (response && response.idToken) {
-                        // 3. If successful, pass the ID token back to the main app
                         microsoftTeams.authentication.notifySuccess(response.idToken);
                     } else {
-                        // This part runs if the popup is opened for the first time to initiate login
                         const loginRequest = {
                             scopes: ["openid", "profile", "email"]
                         };
@@ -41,7 +41,6 @@
                     }
                 })
                 .catch((error) => {
-                    // 4. If there's an error, pass the error message back
                     console.error("Authentication error in popup:", error);
                     microsoftTeams.authentication.notifyFailure(error.toString());
                 });
