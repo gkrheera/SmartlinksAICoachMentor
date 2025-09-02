@@ -2,7 +2,7 @@ import { LogLevel } from '@azure/msal-browser';
 
 const clientId = "ad2de1bb-a645-4140-996c-45a61436c5ba";
 // IMPORTANT: Ensure your Tenant ID is correctly set in your environment variables.
-const tenantId = process.env.REACT_APP_AZURE_TENANT_ID; 
+const tenantId = process.env.REACT_APP_AZURE_TENANT_ID;
 
 if (!clientId || !tenantId) {
   throw new Error("Azure AD configuration is missing. Please check your environment variables.");
@@ -12,9 +12,10 @@ export const msalConfig = {
   auth: {
     clientId: clientId,
     authority: `https://login.microsoftonline.com/${tenantId}`,
-    // This is the page that will open in the popup for authentication
-    redirectUri: "/auth.html", 
+    redirectUri: `${window.location.origin}/auth.html`, 
     postLogoutRedirectUri: "/",
+    // This MUST be false for the Teams popup flow to work correctly.
+    // It prevents MSAL from trying to navigate the main window from the popup.
     navigateToLoginRequestUrl: false,
   },
   cache: {
