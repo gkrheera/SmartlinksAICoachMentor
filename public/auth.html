@@ -7,16 +7,18 @@
 </head>
 <body>
     <script type="text/javascript">
-        // This page is opened in a popup and handles the Azure AD redirect.
-
-        // IMPORTANT: Because this is a static HTML file, it cannot read environment variables.
-        // You MUST ensure that the `clientId` and `tenantId` below match the values in your .env file.
+        // ====================================================================================
+        // IMPORTANT PRODUCTION NOTE:
+        // This is a static HTML file and cannot read from your .env file.
+        // If you change your Azure App Registration (clientId) or your Tenant ID,
+        // YOU MUST MANUALLY UPDATE THE VALUES BELOW to match your new configuration.
+        // Failure to do so will break the authentication flow.
+        // ====================================================================================
         const clientId = "ad2de1bb-a645-4140-996c-45a61436c5ba";
-        const tenantId = "0db7b087-e47f-44cd-85e3-ce0bd7cb19c7"; // <-- Replace with your actual Tenant ID if different
+        const tenantId = "0db7b087-e47f-44cd-85e3-ce0bd7cb19c7"; 
 
         (async () => {
             try {
-                // 1. Initialize Teams SDK first
                 await microsoftTeams.app.initialize();
 
                 const msalConfig = {
@@ -32,25 +34,24 @@
                 };
 
                 const msalInstance = new msal.PublicClientApplication(msalConfig);
-                
-                // 2. Explicitly initialize the MSAL instance
                 await msalInstance.initialize();
 
-                // 3. Handle the redirect promise
                 const response = await msalInstance.handleRedirectPromise();
 
                 if (response && response.idToken) {
-                    // 4. If successful, pass the ID token back to the main app
                     microsoftTeams.authentication.notifySuccess(response.idToken);
                 } else {
-                    // 5. If no response, this is the initial load, so trigger the login redirect
+                    // Get the login hint from the URL query parameters
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const loginHint = urlParams.get('loginHint');
+
                     const loginRequest = {
-                        scopes: ["openid", "profile", "email"]
+                        scopes: ["openid", "profile", "email"],
+                        loginHint: loginHint || undefined // Pass the hint to MSAL
                     };
                     msalInstance.loginRedirect(loginRequest);
                 }
             } catch (error) {
-                // 6. If there's an error, pass the error message back
                 console.error("Authentication error in popup:", error);
                 microsoftTeams.authentication.notifyFailure(error.toString());
             }
