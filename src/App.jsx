@@ -1,54 +1,74 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useMsal, AuthenticatedTemplate, UnauthenticatedTemplate } from '@azure/msal-react';
 import { InteractionStatus, InteractionRequiredAuthError } from '@azure/msal-browser';
-import { app as teamsApp, authentication as teamsAuth } from "@microsoft/teams-js";
+import { app as teamsApp, authentication as teamsAuth, IFrameDialog } from "@microsoft/teams-js";
 import { supabase } from './supabaseClient';
-import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Lightbulb, UserCheck } from 'lucide-react';
+import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Lightbulb, UserCheck, AlertTriangle } from 'lucide-react';
 import { apiRequest } from './authConfig';
 
 // A component to handle the login button and Teams authentication flow
 function Login() {
-    const [isTeamsInitialized, setIsTeamsInitialized] = useState(false);
+    const [statusMessage, setStatusMessage] = useState("Initializing...");
+    const [loginHint, setLoginHint] = useState(null);
+    const [authError, setAuthError] = useState(null);
     const { instance } = useMsal();
 
     useEffect(() => {
-        teamsApp.initialize().then(() => {
-            setIsTeamsInitialized(true);
-        });
+        const initialize = async () => {
+            try {
+                await teamsApp.initialize();
+                setStatusMessage("Fetching user information...");
+                const context = await teamsApp.getContext();
+                if (context.user && context.user.userPrincipalName) {
+                    setLoginHint(context.user.userPrincipalName);
+                    setStatusMessage("Ready to sign in.");
+                } else {
+                    setAuthError("Could not retrieve user information from Teams.");
+                }
+            } catch (error) {
+                console.error("Initialization error:", error);
+                setAuthError("Failed to initialize the application within Teams.");
+            }
+        };
+        initialize();
     }, []);
 
     const handleLogin = () => {
-        if (!isTeamsInitialized) {
-            console.error("Teams SDK not initialized.");
+        if (!loginHint) {
+            setAuthError("Cannot start login without user information from Teams.");
             return;
         }
+        setAuthError(null);
 
         teamsAuth.authenticate({
-            url: window.location.origin + "/auth.html",
+            url: `${window.location.origin}/auth.html?loginHint=${encodeURIComponent(loginHint)}`,
             width: 600,
             height: 535,
-        }).then((result) => {
-            // After the popup succeeds, we need to acquire the token from MSAL.
-            // MSAL will now have the account info in cache.
-            // We reload the page to let the main App component handle the rest.
+        }).then(() => {
             window.location.reload();
         }).catch((reason) => {
             console.error("Login failed: " + reason);
-            alert("Login failed: " + reason);
+            setAuthError(`Login failed: ${reason}. Please close this tab and try again.`);
         });
     };
 
     return (
         <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
             <h1 className="text-3xl font-bold mb-4">AI Coach & Mentor</h1>
-            <p className="mb-8">Please sign-in to continue.</p>
+            <p className="mb-8 text-gray-400">{statusMessage}</p>
             <button
                 onClick={handleLogin}
-                disabled={!isTeamsInitialized}
-                className="bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors disabled:bg-gray-500"
+                disabled={!loginHint}
+                className="bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed"
             >
-                {isTeamsInitialized ? "Sign In with Microsoft Teams" : "Initializing..."}
+                {loginHint ? "Sign In with Microsoft Teams" : "Initializing..."}
             </button>
+            {authError && (
+                 <div className="mt-4 p-3 bg-red-800 border border-red-600 rounded-md text-sm flex items-center">
+                    <AlertTriangle className="h-5 w-5 mr-2" />
+                    {authError}
+                </div>
+            )}
         </div>
     );
 }
@@ -56,8 +76,8 @@ function Login() {
 export default function App() {
     const { inProgress } = useMsal();
 
-    if (inProgress === InteractionStatus.Startup) {
-       return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader2 className="animate-spin mr-2" /> Initializing...</div>;
+    if (inProgress === InteractionStatus.Startup || inProgress === InteractionStatus.HandleRedirect) {
+       return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader2 className="animate-spin mr-2" /> Loading...</div>;
     }
 
     return (
@@ -104,10 +124,10 @@ function AuthenticatedApp() {
                 } catch (e) {
                     console.error("Error setting Supabase session:", e);
                     if (e instanceof InteractionRequiredAuthError) {
-                        alert("Could not acquire token silently. Please sign in again.");
-                        instance.logoutRedirect();
+                        setSupabaseError("Your session has expired. Please sign out and sign in again.");
+                    } else {
+                        setSupabaseError(e.message);
                     }
-                    setSupabaseError(e.message);
                 }
             }
         };
@@ -116,7 +136,9 @@ function AuthenticatedApp() {
     
     const handleLogout = () => {
       supabase.auth.signOut();
-      instance.logoutRedirect();
+      instance.logoutRedirect({
+          postLogoutRedirectUri: "/"
+      });
     };
 
     const handleModeSelect = (mode) => {
@@ -140,7 +162,7 @@ function AuthenticatedApp() {
     }
 
     if (!isSupabaseReady) {
-        return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader2 className="animate-spin mr-2" /> Preparing session...</div>;
+        return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader2 className="animate-spin mr-2" /> Preparing your session...</div>;
     }
 
     if (!modeSelected) {
