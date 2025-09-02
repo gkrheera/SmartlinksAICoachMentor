@@ -1,75 +1,68 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useMsal, AuthenticatedTemplate, UnauthenticatedTemplate } from '@azure/msal-react';
 import { InteractionStatus, InteractionRequiredAuthError } from '@azure/msal-browser';
+import * as microsoftTeams from "@microsoft/teams-js";
 import { supabase } from './supabaseClient';
 import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Lightbulb, UserCheck } from 'lucide-react';
-import { loginRequest, apiRequest } from './authConfig';
+import { apiRequest } from './authConfig';
 
+// A component to handle the login button and Teams authentication flow
+function Login() {
+    const [isTeamsInitialized, setIsTeamsInitialized] = useState(false);
 
-// This component will be rendered when the app is in an iframe, to break out of it.
-function IFrameRedirect() {
     useEffect(() => {
-        console.log("App is in an iframe, redirecting top window...");
-        window.top.location.href = window.location.href;
+        microsoftTeams.app.initialize().then(() => {
+            setIsTeamsInitialized(true);
+        });
     }, []);
 
+    const handleLogin = () => {
+        if (!isTeamsInitialized) {
+            alert("Teams SDK is not initialized yet. Please wait.");
+            return;
+        }
+
+        microsoftTeams.authentication.authenticate({
+            url: window.location.origin + "/auth.html",
+            width: 600,
+            height: 535,
+        }).then((idToken) => {
+            // After successful login, the app will re-render, and the AuthenticatedTemplate will be shown.
+            // We can now force a page reload to ensure MSAL picks up the new state.
+            window.location.reload();
+        }).catch((reason) => {
+            console.error("Login failed: " + reason);
+            alert("Login failed: " + reason);
+        });
+    };
+
     return (
-        <div className="flex items-center justify-center h-screen bg-gray-900 text-white">
-            <Loader2 className="animate-spin mr-2" /> Redirecting to the full application...
+        <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
+            <h1 className="text-3xl font-bold mb-4">AI Coach & Mentor</h1>
+            <p className="mb-8">Please sign-in to continue.</p>
+            <button
+                onClick={handleLogin}
+                disabled={!isTeamsInitialized}
+                className="bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors disabled:bg-gray-500"
+            >
+                {isTeamsInitialized ? "Sign In with Microsoft Teams" : "Initializing..."}
+            </button>
         </div>
     );
 }
 
-function MainApp() {
-    const { instance, inProgress, accounts } = useMsal();
-    const authAttempted = useRef(false);
 
-    useEffect(() => {
-        // This effect handles the redirect response from Azure AD after the user logs in
-        instance.handleRedirectPromise().catch(err => {
-            console.error("Redirect promise error:", err);
-        });
-
-        // If not logged in and not currently authenticating, start the login redirect.
-        // This now only runs in the top-level window.
-        if (inProgress === InteractionStatus.None && accounts.length === 0 && !authAttempted.current) {
-            authAttempted.current = true;
-            instance.loginRedirect(loginRequest);
-        }
-    }, [instance, inProgress, accounts]);
-
-
-    if (inProgress !== InteractionStatus.None) {
-        return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader2 className="animate-spin mr-2" /> Authenticating...</div>;
-    }
-
+export default function App() {
     return (
         <>
             <AuthenticatedTemplate>
                 <AuthenticatedApp />
             </AuthenticatedTemplate>
             <UnauthenticatedTemplate>
-                 <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
-                    <h1 className="text-3xl font-bold mb-4">AI Coach & Mentor</h1>
-                    <div className="text-center">
-                       <Loader2 className="animate-spin h-8 w-8 mx-auto mb-4" />
-                       <p className="mb-8">Please wait while we prepare the sign-in page...</p>
-                    </div>
-                </div>
+                <Login />
             </UnauthenticatedTemplate>
         </>
     );
-}
-
-
-export default function App() {
-    // If the app is loaded in an iframe (like MS Teams), render the redirect component.
-    // Otherwise, render the main application.
-    if (window.top !== window.self) {
-        return <IFrameRedirect />;
-    } else {
-        return <MainApp />;
-    }
 }
 
 
@@ -83,9 +76,8 @@ function AuthenticatedApp() {
         const setSupabaseSession = async () => {
             if (accounts.length > 0) {
                 try {
-                    // Acquire the ID token silently
                     const response = await instance.acquireTokenSilent({
-                        ...loginRequest,
+                        scopes: ["openid", "profile", "email"],
                         account: accounts[0]
                     });
 
@@ -93,7 +85,6 @@ function AuthenticatedApp() {
                         throw new Error("ID Token not found in MSAL response.");
                     }
 
-                    // Sign into Supabase with the ID token. Supabase handles nonce validation.
                     const { data, error } = await supabase.auth.signInWithIdToken({
                         provider: 'azure',
                         token: response.idToken,
@@ -107,7 +98,8 @@ function AuthenticatedApp() {
                 } catch (e) {
                     console.error("Error setting Supabase session:", e);
                      if (e instanceof InteractionRequiredAuthError) {
-                        instance.loginRedirect(loginRequest);
+                        alert("Could not acquire token silently. Please sign in again.");
+                        instance.logoutRedirect();
                     }
                     setSupabaseError(e.message);
                 }
@@ -115,28 +107,27 @@ function AuthenticatedApp() {
         };
         setSupabaseSession();
     }, [instance, accounts]);
+    
+    const handleLogout = () => {
+      supabase.auth.signOut();
+      instance.logoutRedirect();
+    };
 
     const handleModeSelect = (mode) => {
         setModeSelected(mode);
         sessionStorage.setItem('appMode', mode);
     };
-
-    const handleLogout = () => {
-        supabase.auth.signOut();
-        instance.logoutRedirect();
-    };
-
+    
     if (supabaseError) {
         return (
             <div className="flex flex-col items-center justify-center h-screen bg-red-900 text-white p-4 text-center">
                 <h1 className="text-2xl font-bold mb-4">Error Configuring Session</h1>
                 <p className="mb-4">{supabaseError}</p>
-                <p className="text-sm mb-6">There was a problem establishing a secure session. Please try signing out and signing back in.</p>
                  <button 
                     onClick={handleLogout} 
                     className="mt-4 bg-gray-600 text-white font-bold py-2 px-4 rounded hover:bg-gray-700 transition-colors"
                 >
-                    Sign Out
+                    Sign Out and Start Over
                 </button>
             </div>
         );
