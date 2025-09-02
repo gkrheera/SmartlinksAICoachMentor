@@ -11,10 +11,9 @@ export const msalConfig = {
   auth: {
     clientId: clientId,
     authority: `https://login.microsoftonline.com/${tenantId}`,
-    // This is the only redirect URI needed for the new flow
-   redirectUri: "https://smartlinksaicoachmentor.netlify.app/", 
+    redirectUri: "https://smartlinksaicoachmentor.netlify.app/", 
     postLogoutRedirectUri: "https://smartlinksaicoachmentor.netlify.app/",
-    navigateToLoginRequestUrl: false, // This should be false for redirect flow
+    navigateToLoginRequestUrl: false, // Important for redirect flow
   },
   cache: {
     cacheLocation: 'sessionStorage',
