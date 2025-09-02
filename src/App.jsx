@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useMsal, AuthenticatedTemplate, UnauthenticatedTemplate } from '@azure/msal-react';
 import { InteractionStatus, InteractionRequiredAuthError } from '@azure/msal-browser';
-import * as microsoftTeams from "@microsoft/teams-js";
+import { app as teamsApp, authentication as teamsAuth } from "@microsoft/teams-js";
 import { supabase } from './supabaseClient';
 import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Lightbulb, UserCheck } from 'lucide-react';
 import { apiRequest } from './authConfig';
@@ -9,26 +9,28 @@ import { apiRequest } from './authConfig';
 // A component to handle the login button and Teams authentication flow
 function Login() {
     const [isTeamsInitialized, setIsTeamsInitialized] = useState(false);
+    const { instance } = useMsal();
 
     useEffect(() => {
-        microsoftTeams.app.initialize().then(() => {
+        teamsApp.initialize().then(() => {
             setIsTeamsInitialized(true);
         });
     }, []);
 
     const handleLogin = () => {
         if (!isTeamsInitialized) {
-            alert("Teams SDK is not initialized yet. Please wait.");
+            console.error("Teams SDK not initialized.");
             return;
         }
 
-        microsoftTeams.authentication.authenticate({
+        teamsAuth.authenticate({
             url: window.location.origin + "/auth.html",
             width: 600,
             height: 535,
-        }).then((idToken) => {
-            // After successful login, the app will re-render, and the AuthenticatedTemplate will be shown.
-            // We can now force a page reload to ensure MSAL picks up the new state.
+        }).then((result) => {
+            // After the popup succeeds, we need to acquire the token from MSAL.
+            // MSAL will now have the account info in cache.
+            // We reload the page to let the main App component handle the rest.
             window.location.reload();
         }).catch((reason) => {
             console.error("Login failed: " + reason);
@@ -51,8 +53,13 @@ function Login() {
     );
 }
 
-
 export default function App() {
+    const { inProgress } = useMsal();
+
+    if (inProgress === InteractionStatus.Startup) {
+       return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader2 className="animate-spin mr-2" /> Initializing...</div>;
+    }
+
     return (
         <>
             <AuthenticatedTemplate>
@@ -64,7 +71,6 @@ export default function App() {
         </>
     );
 }
-
 
 function AuthenticatedApp() {
     const { instance, accounts } = useMsal();
@@ -97,7 +103,7 @@ function AuthenticatedApp() {
 
                 } catch (e) {
                     console.error("Error setting Supabase session:", e);
-                     if (e instanceof InteractionRequiredAuthError) {
+                    if (e instanceof InteractionRequiredAuthError) {
                         alert("Could not acquire token silently. Please sign in again.");
                         instance.logoutRedirect();
                     }
