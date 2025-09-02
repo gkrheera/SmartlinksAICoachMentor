@@ -8,43 +8,53 @@
 <body>
     <script type="text/javascript">
         // This page is opened in a popup and handles the Azure AD redirect.
-        
+
         // IMPORTANT: Because this is a static HTML file, it cannot read environment variables.
         // You MUST ensure that the `clientId` and `tenantId` below match the values in your .env file.
         const clientId = "ad2de1bb-a645-4140-996c-45a61436c5ba";
-        const tenantId = "0db7b087-e47f-44cd-85e3-ce0bd7cb19c7"; // <-- Replace with your actual Tenant ID
+        const tenantId = "0db7b087-e47f-44cd-85e3-ce0bd7cb19c7"; // <-- Replace with your actual Tenant ID if different
 
-        microsoftTeams.app.initialize().then(() => {
-            const msalConfig = {
-                auth: {
-                    clientId: clientId,
-                    authority: `https://login.microsoftonline.com/${tenantId}`,
-                    redirectUri: window.location.origin + "/auth.html"
-                },
-                cache: {
-                    cacheLocation: "sessionStorage",
-                    storeAuthStateInCookie: false,
-                }
-            };
+        (async () => {
+            try {
+                // 1. Initialize Teams SDK first
+                await microsoftTeams.app.initialize();
 
-            const msalInstance = new msal.PublicClientApplication(msalConfig);
-
-            msalInstance.handleRedirectPromise()
-                .then((response) => {
-                    if (response && response.idToken) {
-                        microsoftTeams.authentication.notifySuccess(response.idToken);
-                    } else {
-                        const loginRequest = {
-                            scopes: ["openid", "profile", "email"]
-                        };
-                        msalInstance.loginRedirect(loginRequest);
+                const msalConfig = {
+                    auth: {
+                        clientId: clientId,
+                        authority: `https://login.microsoftonline.com/${tenantId}`,
+                        redirectUri: window.location.origin + "/auth.html"
+                    },
+                    cache: {
+                        cacheLocation: "sessionStorage",
+                        storeAuthStateInCookie: false,
                     }
-                })
-                .catch((error) => {
-                    console.error("Authentication error in popup:", error);
-                    microsoftTeams.authentication.notifyFailure(error.toString());
-                });
-        });
+                };
+
+                const msalInstance = new msal.PublicClientApplication(msalConfig);
+                
+                // 2. Explicitly initialize the MSAL instance
+                await msalInstance.initialize();
+
+                // 3. Handle the redirect promise
+                const response = await msalInstance.handleRedirectPromise();
+
+                if (response && response.idToken) {
+                    // 4. If successful, pass the ID token back to the main app
+                    microsoftTeams.authentication.notifySuccess(response.idToken);
+                } else {
+                    // 5. If no response, this is the initial load, so trigger the login redirect
+                    const loginRequest = {
+                        scopes: ["openid", "profile", "email"]
+                    };
+                    msalInstance.loginRedirect(loginRequest);
+                }
+            } catch (error) {
+                // 6. If there's an error, pass the error message back
+                console.error("Authentication error in popup:", error);
+                microsoftTeams.authentication.notifyFailure(error.toString());
+            }
+        })();
     </script>
 </body>
 </html>
