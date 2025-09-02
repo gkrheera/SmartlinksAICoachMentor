@@ -10,8 +10,9 @@
   to = "/index.html"
   status = 200
 
+# This section sets the Content Security Policy for your entire site.
 [[headers]]
-  for = "/"
+  for = "/*"
   [headers.values]
     Content-Security-Policy = """
       default-src 'self';
