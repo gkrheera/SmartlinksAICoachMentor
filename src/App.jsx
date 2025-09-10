@@ -206,6 +206,11 @@ function ChatInterface({ mode, session }) {
                 .limit(1)
                 .single();
 
+            // Handle potential errors, ignoring the "no rows found" case which is expected.
+            if (error && error.code !== 'PGRST116') {
+                console.error("Error loading conversation:", error);
+            }
+
             if (data && data.messages.length > 0) {
                 setMessages(data.messages);
                 setConversationId(data.id);
@@ -380,4 +385,5 @@ const NavButton = ({ icon, label, active, onClick, mode }) => {
         </button>
     );
 };
+
 
