@@ -3,14 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
-    "@azure/msal-browser": "^3.1.0",
-    "@azure/msal-react": "^2.0.3",
     "@supabase/supabase-js": "^2.38.4",
     "@testing-library/jest-dom": "^5.17.0",
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^13.5.0",
     "jsonwebtoken": "^9.0.2",
-    "jwks-rsa": "^3.1.0",
     "lucide-react": "^0.291.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -42,3 +39,4 @@
     ]
   }
 }
+
