@@ -1,36 +1,18 @@
 const jwt = require('jsonwebtoken');
-const jwksClient = require('jwks-rsa');
 
-// Helper function to validate the Azure AD Access Token
-const validateToken = async (token) => {
-  const {
-    REACT_APP_AZURE_TENANT_ID: tenantId,
-    REACT_APP_AZURE_CLIENT_ID: clientId
-  } = process.env;
-
-  if (!tenantId || !clientId) {
-    throw new Error('Azure AD environment variables not set.');
+// Helper function to validate the Supabase JWT
+const validateToken = (token) => {
+  const jwtSecret = process.env.SUPABASE_JWT_SECRET;
+  if (!jwtSecret) {
+    throw new Error('Supabase JWT Secret is not set in environment variables.');
   }
 
-  const client = jwksClient({
-    jwksUri: `https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`
-  });
-
-  const getKey = (header, callback) => {
-    client.getSigningKey(header.kid, (err, key) => {
-      const signingKey = key.publicKey || key.rsaPublicKey;
-      callback(null, signingKey);
-    });
-  };
-
   return new Promise((resolve, reject) => {
-    jwt.verify(token, getKey, {
-      audience: `api://${clientId}`,
-      issuer: `https://sts.windows.net/${tenantId}/`
-    }, (err, decoded) => {
+    jwt.verify(token, jwtSecret, (err, decoded) => {
       if (err) {
         return reject(err);
       }
+      // You can add additional checks here if needed, like checking the 'aud' or 'iss' claims
       resolve(decoded);
     });
   });
@@ -103,4 +85,3 @@ exports.handler = async (event) => {
     };
   }
 };
-
