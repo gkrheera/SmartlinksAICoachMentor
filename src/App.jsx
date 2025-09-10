@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle, useCallback } from 'react';
 import { supabase } from './supabaseClient';
 import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Lightbulb, UserCheck, AlertTriangle, LogOut, PlusCircle } from 'lucide-react';
 
@@ -201,14 +201,14 @@ const ChatInterface = forwardRef(({ mode, session }, ref) => {
     const [conversationId, setConversationId] = useState(null);
     const messagesEndRef = useRef(null);
 
-    const startNewConversation = () => {
+    const startNewConversation = useCallback(() => {
         const welcomeMessage = {
             role: 'assistant',
             content: `Hello! I'm your AI ${mode}. Our conversation is confidential. What's on your mind today?`
         };
         setMessages([welcomeMessage]);
         setConversationId(null);
-    };
+    }, [mode]);
     
     useImperativeHandle(ref, () => ({
         startNewConversation
@@ -239,7 +239,7 @@ const ChatInterface = forwardRef(({ mode, session }, ref) => {
         };
 
         loadConversation();
-    }, [mode, session.user.id]);
+    }, [mode, session.user.id, startNewConversation]);
 
 
     useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
@@ -394,4 +394,5 @@ const NavButton = ({ icon, label, active, onClick, mode }) => {
         </button>
     );
 };
+
 
