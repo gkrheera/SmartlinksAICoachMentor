@@ -1,142 +1,147 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useMsal, AuthenticatedTemplate, UnauthenticatedTemplate } from '@azure/msal-react';
-import { InteractionStatus, InteractionRequiredAuthError } from '@azure/msal-browser';
 import { supabase } from './supabaseClient';
-import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Lightbulb, UserCheck, AlertTriangle } from 'lucide-react';
-import { apiRequest, loginRequest } from './authConfig';
+import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Lightbulb, UserCheck, AlertTriangle, LogOut } from 'lucide-react';
 
-function Login() {
-    const { instance } = useMsal();
-    const [authError, setAuthError] = useState(null);
+// --- NEW SUPABASE AUTH COMPONENT ---
+function Auth() {
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
 
-    const handleLogin = () => {
-        setAuthError(null);
-        instance.loginRedirect(loginRequest).catch(e => {
-            console.error("Login failed:", e);
-            setAuthError("Login failed. Please try again.");
-        });
-    };
+  const handleAuthAction = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    setMessage('');
 
-    return (
-        <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
-            <h1 className="text-3xl font-bold mb-4">AI Coach & Mentor</h1>
-            <p className="mb-8 text-gray-400">Ready to sign in.</p>
-            <button
-                onClick={handleLogin}
-                className="bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors"
-            >
-                Sign In with Microsoft
-            </button>
-            {authError && (
-                 <div className="mt-4 p-3 bg-red-800 border border-red-600 rounded-md text-sm flex items-center">
-                    <AlertTriangle className="h-5 w-5 mr-2" />
-                    {authError}
-                </div>
-            )}
+    try {
+      if (isSignUp) {
+        const { error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
+        setMessage('Success! Please check your email for a confirmation link.');
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        // No message needed on login, the app will just proceed.
+      }
+    } catch (err) {
+      setError(err.message || 'An unexpected error occurred.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white p-4">
+      <div className="w-full max-w-sm">
+        <h1 className="text-3xl font-bold mb-2 text-center">AI Coach & Mentor</h1>
+        <p className="text-gray-400 mb-8 text-center">{isSignUp ? 'Create an account to get started.' : 'Sign in to continue.'}</p>
+
+        <form onSubmit={handleAuthAction} className="space-y-4">
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength="6"
+            className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors disabled:bg-gray-500"
+          >
+            {loading ? <Loader2 className="animate-spin mx-auto" /> : (isSignUp ? 'Sign Up' : 'Sign In')}
+          </button>
+        </form>
+
+        {error && (
+          <div className="mt-4 p-3 bg-red-800 border border-red-600 rounded-md text-sm flex items-center">
+            <AlertTriangle className="h-5 w-5 mr-2" />
+            {error}
+          </div>
+        )}
+        {message && (
+          <div className="mt-4 p-3 bg-green-800 border border-green-600 rounded-md text-sm text-center">
+            {message}
+          </div>
+        )}
+
+        <div className="mt-6 text-center">
+          <button onClick={() => setIsSignUp(!isSignUp)} className="text-gray-400 hover:text-white text-sm">
+            {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
+          </button>
         </div>
-    );
+      </div>
+    </div>
+  );
 }
+
 
 export default function App() {
-    const { inProgress } = useMsal();
-
-    if (inProgress === InteractionStatus.Startup || inProgress === InteractionStatus.HandleRedirect) {
-       return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader2 className="animate-spin mr-2" /> Loading...</div>;
-    }
-
-    return (
-        <>
-            <AuthenticatedTemplate>
-                <AuthenticatedApp />
-            </AuthenticatedTemplate>
-            <UnauthenticatedTemplate>
-                <Login />
-            </UnauthenticatedTemplate>
-        </>
-    );
-}
-
-function AuthenticatedApp() {
-    const { instance, accounts } = useMsal();
-    const [isSupabaseReady, setIsSupabaseReady] = useState(false);
-    const [modeSelected, setModeSelected] = useState(sessionStorage.getItem('appMode') || null);
-    const [supabaseError, setSupabaseError] = useState(null);
+    const [session, setSession] = useState(null);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const setSupabaseSession = async () => {
-            if (accounts.length > 0) {
-                try {
-                    const response = await instance.acquireTokenSilent({
-                        scopes: ["openid", "profile", "email"],
-                        account: accounts[0]
-                    });
-
-                    if (!response.idToken) {
-                        throw new Error("ID Token not found in MSAL response.");
-                    }
-
-                    const { data, error } = await supabase.auth.signInWithIdToken({
-                        provider: 'azure',
-                        token: response.idToken,
-                    });
-
-                    if (error) throw error;
-                    if (!data.session) throw new Error("Supabase session could not be established.");
-                    
-                    setIsSupabaseReady(true);
-
-                } catch (e) {
-                    console.error("Error setting Supabase session:", e);
-                    if (e instanceof InteractionRequiredAuthError) {
-                        setSupabaseError("Your session has expired. Please sign out and sign in again.");
-                    } else {
-                        setSupabaseError(e.message);
-                    }
-                }
-            }
+        const getSession = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            setSession(session);
+            setLoading(false);
         };
-        setSupabaseSession();
-    }, [instance, accounts]);
+        getSession();
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            setSession(session);
+        });
+
+        return () => subscription.unsubscribe();
+    }, []);
+
+    if (loading) {
+        return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader2 className="animate-spin mr-2" /> Loading...</div>;
+    }
+
+    if (!session) {
+        return <Auth />;
+    }
+
+    return <AuthenticatedApp key={session.user.id} session={session} />;
+}
+
+function AuthenticatedApp({ session }) {
+    const [modeSelected, setModeSelected] = useState(sessionStorage.getItem('appMode') || null);
     
-    const handleLogout = () => {
-      supabase.auth.signOut();
-      instance.logoutRedirect({
-          postLogoutRedirectUri: "/"
-      });
+    const handleLogout = async () => {
+      await supabase.auth.signOut();
     };
 
     const handleModeSelect = (mode) => {
         setModeSelected(mode);
         sessionStorage.setItem('appMode', mode);
     };
-    
-    if (supabaseError) {
-        return (
-            <div className="flex flex-col items-center justify-center h-screen bg-red-900 text-white p-4 text-center">
-                <h1 className="text-2xl font-bold mb-4">Error Configuring Session</h1>
-                <p className="mb-4">{supabaseError}</p>
-                 <button 
-                    onClick={handleLogout} 
-                    className="mt-4 bg-gray-600 text-white font-bold py-2 px-4 rounded hover:bg-gray-700 transition-colors"
-                >
-                    Sign Out and Start Over
-                </button>
-            </div>
-        );
-    }
-
-    if (!isSupabaseReady) {
-        return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader2 className="animate-spin mr-2" /> Preparing your session...</div>;
-    }
 
     if (!modeSelected) {
-        return <ModeSelection onSelect={handleModeSelect} />;
+        return <ModeSelection onSelect={handleModeSelect} onLogout={handleLogout} />;
     }
 
-    return <MainInterface user={accounts[0]} initialMode={modeSelected} onModeChange={handleModeSelect} />;
+    return <MainInterface session={session} initialMode={modeSelected} onModeChange={handleModeSelect} onLogout={handleLogout} />;
 }
 
-function MainInterface({ user, initialMode, onModeChange }) {
+// --- Main application components below ---
+
+function MainInterface({ session, initialMode, onModeChange, onLogout }) {
     const [currentMode, setCurrentMode] = useState(initialMode);
 
     const handleNavClick = (mode) => {
@@ -153,24 +158,24 @@ function MainInterface({ user, initialMode, onModeChange }) {
                         {isMentorMode ? <BrainCircuit className="h-6 w-6 text-white" /> : <GitBranch className="h-6 w-6 text-white" />}
                     </div>
                     <div className="ml-3">
-                        <h1 className="text-lg font-bold text-white">{isMentorMode ? 'AI Mentor' : 'AI Coach'} for {user?.name || 'User'}</h1>
+                        <h1 className="text-lg font-bold text-white">{isMentorMode ? 'AI Mentor' : 'AI Coach'} for {session.user.email}</h1>
                         <p className={`text-xs ${isMentorMode ? 'text-green-400' : 'text-purple-300'}`}>Status: Active</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-1 sm:gap-2">
+                <div className="flex items-center gap-1 sm:gap-4">
                     <NavButton icon={<MessageSquare size={18}/>} label="Mentor" active={currentMode === 'mentor'} onClick={() => handleNavClick('mentor')} mode="mentor" />
                     <NavButton icon={<GitBranch size={18}/>} label="Coach" active={currentMode === 'coach'} onClick={() => handleNavClick('coach')} mode="coach" />
+                    <button onClick={onLogout} className="text-gray-400 hover:text-white" title="Sign Out"><LogOut size={20}/></button>
                 </div>
             </header>
             <div className="flex-1 overflow-y-hidden">
-                <ChatInterface mode={currentMode} key={currentMode} />
+                <ChatInterface mode={currentMode} accessToken={session.access_token} key={currentMode} />
             </div>
         </div>
     );
 }
 
-function ChatInterface({ mode }) {
-    const { instance, accounts } = useMsal();
+function ChatInterface({ mode, accessToken }) {
     const [messages, setMessages] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [input, setInput] = useState('');
@@ -211,13 +216,11 @@ function ChatInterface({ mode }) {
             3.  **Advise Second:** Once you have a clear understanding, transition to providing direct advice. Your recommendations should be clear, actionable, and framed within the context you have identified.`;
 
         try {
-            const tokenResponse = await instance.acquireTokenSilent({ ...apiRequest, account: accounts[0] });
-
             const response = await fetch('/.netlify/functions/callGemini', {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${tokenResponse.accessToken}`
+                    'Authorization': `Bearer ${accessToken}`
                 },
                 body: JSON.stringify({ history: newMessages, systemPrompt }),
             });
@@ -275,9 +278,12 @@ function ChatInterface({ mode }) {
     );
 }
 
-function ModeSelection({ onSelect }) {
+function ModeSelection({ onSelect, onLogout }) {
     return (
         <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white p-4">
+            <div className="absolute top-4 right-4">
+              <button onClick={onLogout} className="text-gray-400 hover:text-white flex items-center gap-2 text-sm" title="Sign Out"><LogOut size={16}/> Sign Out</button>
+            </div>
             <h1 className="text-4xl font-bold mb-4 text-center">Welcome to the AI Suite</h1>
             <p className="text-lg text-gray-400 mb-12 text-center">Choose your path for today's session.</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-4xl">
@@ -324,4 +330,3 @@ const NavButton = ({ icon, label, active, onClick, mode }) => {
         </button>
     );
 };
-
