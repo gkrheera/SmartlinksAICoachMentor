@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { supabase } from './supabaseClient';
 import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Lightbulb, UserCheck, AlertTriangle, LogOut, PlusCircle } from 'lucide-react';
 
@@ -125,6 +125,7 @@ function AuthenticatedApp({ session }) {
     const [modeSelected, setModeSelected] = useState(sessionStorage.getItem('appMode') || null);
     
     const handleLogout = async () => {
+      sessionStorage.removeItem('appMode');
       await supabase.auth.signOut();
     };
 
@@ -141,18 +142,21 @@ function AuthenticatedApp({ session }) {
 }
 
 // --- MAIN UI ---
-// **UPDATED** to include a "New Conversation" button and logic to reset the chat.
 function MainInterface({ session, initialMode, onModeChange, onLogout }) {
     const [currentMode, setCurrentMode] = useState(initialMode);
-    const [chatKey, setChatKey] = useState(0); // <-- New state to force chat reset
+    const chatRef = useRef(null);
 
     const handleNavClick = (mode) => {
-        setCurrentMode(mode);
-        onModeChange(mode);
+        if (mode !== currentMode) {
+          setCurrentMode(mode);
+          onModeChange(mode);
+        }
     };
 
     const handleNewConversation = () => {
-        setChatKey(prevKey => prevKey + 1); // <-- Force remount of ChatInterface
+        if (chatRef.current) {
+            chatRef.current.startNewConversation();
+        }
     };
 
     const isMentorMode = currentMode === 'mentor';
@@ -160,10 +164,7 @@ function MainInterface({ session, initialMode, onModeChange, onLogout }) {
         <div className={`flex flex-col h-screen text-gray-100 font-sans ${isMentorMode ? 'bg-gray-800' : 'bg-purple-900'}`}>
             <header className={`p-4 border-b flex items-center justify-between ${isMentorMode ? 'bg-gray-900 border-gray-700' : 'bg-purple-950 border-purple-800'}`}>
                 <div className="flex items-center">
-                    <button onClick={handleNewConversation} className="mr-3 p-2 rounded-md text-gray-300 hover:bg-gray-700 hover:text-white transition-colors" title="New Conversation">
-                        <PlusCircle size={22} />
-                    </button>
-                    <div className={`p-2 rounded-full ${isMentorMode ? 'bg-blue-500' : 'bg-purple-500'}`}>
+                     <div className={`p-2 rounded-full ${isMentorMode ? 'bg-blue-500' : 'bg-purple-500'}`}>
                         {isMentorMode ? <BrainCircuit className="h-6 w-6 text-white" /> : <GitBranch className="h-6 w-6 text-white" />}
                     </div>
                     <div className="ml-3">
@@ -172,28 +173,47 @@ function MainInterface({ session, initialMode, onModeChange, onLogout }) {
                     </div>
                 </div>
                 <div className="flex items-center gap-1 sm:gap-4">
+                     <button 
+                        onClick={handleNewConversation} 
+                        className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors bg-gray-700 hover:bg-gray-600 text-white" 
+                        title="Start a new conversation"
+                    >
+                        <PlusCircle size={18} />
+                        <span className="hidden sm:inline">New Chat</span>
+                    </button>
                     <NavButton icon={<MessageSquare size={18}/>} label="Mentor" active={currentMode === 'mentor'} onClick={() => handleNavClick('mentor')} mode="mentor" />
                     <NavButton icon={<GitBranch size={18}/>} label="Coach" active={currentMode === 'coach'} onClick={() => handleNavClick('coach')} mode="coach" />
                     <button onClick={onLogout} className="text-gray-400 hover:text-white" title="Sign Out"><LogOut size={20}/></button>
                 </div>
             </header>
             <div className="flex-1 overflow-y-hidden">
-                <ChatInterface mode={currentMode} session={session} key={`${currentMode}-${chatKey}`} />
+                <ChatInterface ref={chatRef} mode={currentMode} session={session} key={currentMode} />
             </div>
         </div>
     );
 }
 
 // --- CHAT INTERFACE ---
-// **UPDATED** to load and save conversations from/to Supabase.
-function ChatInterface({ mode, session }) {
+const ChatInterface = forwardRef(({ mode, session }, ref) => {
     const [messages, setMessages] = useState([]);
-    const [isLoading, setIsLoading] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
     const [input, setInput] = useState('');
-    const [conversationId, setConversationId] = useState(null); // <-- New state for DB record ID
+    const [conversationId, setConversationId] = useState(null);
     const messagesEndRef = useRef(null);
 
-    // Effect to load the latest conversation on mount
+    const startNewConversation = () => {
+        const welcomeMessage = {
+            role: 'assistant',
+            content: `Hello! I'm your AI ${mode}. Our conversation is confidential. What's on your mind today?`
+        };
+        setMessages([welcomeMessage]);
+        setConversationId(null);
+    };
+    
+    useImperativeHandle(ref, () => ({
+        startNewConversation
+    }));
+
     useEffect(() => {
         const loadConversation = async () => {
             setIsLoading(true);
@@ -203,25 +223,17 @@ function ChatInterface({ mode, session }) {
                 .eq('user_id', session.user.id)
                 .eq('mode', mode)
                 .order('updated_at', { ascending: false })
-                .limit(1)
-                .single();
+                .limit(1);
 
-            // Handle potential errors, ignoring the "no rows found" case which is expected.
-            if (error && error.code !== 'PGRST116') {
+            if (error) {
                 console.error("Error loading conversation:", error);
             }
 
-            if (data && data.messages.length > 0) {
-                setMessages(data.messages);
-                setConversationId(data.id);
+            if (data && data.length > 0 && data[0].messages) {
+                setMessages(data[0].messages);
+                setConversationId(data[0].id);
             } else {
-                // If no conversation exists, start with a fresh welcome message
-                const welcomeMessage = {
-                    role: 'assistant',
-                    content: `Hello! I'm your AI ${mode}. Our conversation is confidential. What's on your mind today?`
-                };
-                setMessages([welcomeMessage]);
-                setConversationId(null);
+                startNewConversation();
             }
             setIsLoading(false);
         };
@@ -242,8 +254,8 @@ function ChatInterface({ mode, session }) {
         setIsLoading(true);
 
         const systemPrompt = mode === 'coach' 
-            ? `You are an AI Coach...` // Content omitted for brevity
-            : `You are an AI Mentor...`; // Content omitted for brevity
+            ? `You are an AI Coach that strictly adheres to the ICF Core Competencies and PCC Markers. Your primary goal is to help the user find their own solutions through powerful questioning and active listening. **Core Principles:** 1. **One Question at a Time:** You MUST only ask ONE open-ended question per response. This is your most important rule. 2. **Listen Actively:** Reflect back the user's language and emotions before asking your question. Use phrases like, "What I'm hearing is..." or "It sounds like you're feeling..." 3. **Evoke Awareness:** Ask questions about the user's way of thinking, their assumptions, values, and needs. 4. **No Advice:** NEVER give direct advice, solutions, or opinions.`
+            : `You are an AI Mentor. Your purpose is to provide expert advice and actionable guidance. Your methodology is to first **Inquire**, then **Advise**. **Your Process:** 1. **Inquire First:** When the user presents a problem, your first priority is to understand their context. Ask 1-2 powerful, open-ended questions to clarify the situation, the goals, and the obstacles. Do NOT offer any advice at this stage. 2. **Identify Context:** Based on the user's answers, determine if their challenge relates to Project Management, IT Consulting, Facilitation, or Sales. 3. **Advise Second:** Once you have a clear understanding, transition to providing direct advice. Your recommendations should be clear, actionable, and framed within the context you have identified.`;
 
         try {
             const response = await fetch('/.netlify/functions/callGemini', {
@@ -265,16 +277,13 @@ function ChatInterface({ mode, session }) {
             const finalMessages = [...newMessages, assistantMessage];
             setMessages(finalMessages);
 
-            // --- DATABASE SAVE LOGIC ---
             if (conversationId) {
-                // Update the existing conversation record
                 const { error } = await supabase
                     .from('conversations')
                     .update({ messages: finalMessages })
                     .eq('id', conversationId);
                 if (error) console.error("Error updating conversation:", error);
             } else {
-                // Create a new conversation record
                 const { data: newData, error } = await supabase
                     .from('conversations')
                     .insert({
@@ -283,7 +292,7 @@ function ChatInterface({ mode, session }) {
                         messages: finalMessages
                     })
                     .select('id')
-                    .single();
+                    .single(); // Using .single() here is safe because we expect one row back after insert
                 if (error) console.error("Error creating conversation:", error);
                 if (newData) setConversationId(newData.id);
             }
@@ -330,7 +339,7 @@ function ChatInterface({ mode, session }) {
             </footer>
         </div>
     );
-}
+});
 
 // --- MODE SELECTION & OTHER COMPONENTS (No changes) ---
 function ModeSelection({ onSelect, onLogout }) {
@@ -385,5 +394,4 @@ const NavButton = ({ icon, label, active, onClick, mode }) => {
         </button>
     );
 };
-
 
