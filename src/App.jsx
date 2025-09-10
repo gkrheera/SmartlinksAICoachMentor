@@ -201,14 +201,25 @@ const ChatInterface = forwardRef(({ mode, session }, ref) => {
     const [conversationId, setConversationId] = useState(null);
     const messagesEndRef = useRef(null);
 
-    const startNewConversation = useCallback(() => {
+    const startNewConversation = useCallback(async () => {
+        if (conversationId) {
+            const { error } = await supabase
+                .from('conversations')
+                .delete()
+                .eq('id', conversationId);
+
+            if (error) {
+                console.error("Error deleting conversation:", error);
+            }
+        }
+
         const welcomeMessage = {
             role: 'assistant',
             content: `Hello! I'm your AI ${mode}. Our conversation is confidential. What's on your mind today?`
         };
         setMessages([welcomeMessage]);
         setConversationId(null);
-    }, [mode]);
+    }, [mode, conversationId]);
     
     useImperativeHandle(ref, () => ({
         startNewConversation
@@ -333,7 +344,7 @@ const ChatInterface = forwardRef(({ mode, session }, ref) => {
             </main>
             <footer className={`p-2 sm:p-4 ${footerBg}`}>
                 <div className={`flex items-center rounded-lg p-2 ${inputBg}`}>
-                    <input type="text" value={input} onChange={e => setInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleSend()} placeholder="Type your message..." className={`flex-1 bg-transparent focus:outline-none px-2 ${isMentorMode ? 'text-white' : 'text-gray-800'}`} disabled={isLoading} />
+                    <input type="text" value={input} onChange={e => setInput(e.value)} onKeyPress={e => e.key === 'Enter' && handleSend()} placeholder="Type your message..." className={`flex-1 bg-transparent focus:outline-none px-2 ${isMentorMode ? 'text-white' : 'text-gray-800'}`} disabled={isLoading} />
                     <button onClick={handleSend} disabled={isLoading || !input.trim()} className={`p-2 ml-2 rounded-md text-white disabled:bg-gray-500 transition-colors ${sendButtonBg}`}><Send size={20} /></button>
                 </div>
             </footer>
@@ -394,5 +405,4 @@ const NavButton = ({ icon, label, active, onClick, mode }) => {
         </button>
     );
 };
-
 
