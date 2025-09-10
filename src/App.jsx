@@ -7,7 +7,6 @@ import { apiRequest, loginRequest } from './authConfig';
 
 function Login() {
     const { instance } = useMsal();
-    const [statusMessage, setStatusMessage] = useState("Ready to sign in.");
     const [authError, setAuthError] = useState(null);
 
     const handleLogin = () => {
@@ -21,7 +20,7 @@ function Login() {
     return (
         <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
             <h1 className="text-3xl font-bold mb-4">AI Coach & Mentor</h1>
-            <p className="mb-8 text-gray-400">{statusMessage}</p>
+            <p className="mb-8 text-gray-400">Ready to sign in.</p>
             <button
                 onClick={handleLogin}
                 className="bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors"
@@ -325,3 +324,4 @@ const NavButton = ({ icon, label, active, onClick, mode }) => {
         </button>
     );
 };
+
