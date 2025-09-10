@@ -1,54 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useMsal, AuthenticatedTemplate, UnauthenticatedTemplate } from '@azure/msal-react';
 import { InteractionStatus, InteractionRequiredAuthError } from '@azure/msal-browser';
-import { app as teamsApp, authentication as teamsAuth, IFrameDialog } from "@microsoft/teams-js";
 import { supabase } from './supabaseClient';
 import { Bot, User, Send, BrainCircuit, Loader2, MessageSquare, GitBranch, Lightbulb, UserCheck, AlertTriangle } from 'lucide-react';
-import { apiRequest } from './authConfig';
+import { apiRequest, loginRequest } from './authConfig';
 
-// A component to handle the login button and Teams authentication flow
 function Login() {
-    const [statusMessage, setStatusMessage] = useState("Initializing...");
-    const [loginHint, setLoginHint] = useState(null);
-    const [authError, setAuthError] = useState(null);
     const { instance } = useMsal();
-
-    useEffect(() => {
-        const initialize = async () => {
-            try {
-                await teamsApp.initialize();
-                setStatusMessage("Fetching user information...");
-                const context = await teamsApp.getContext();
-                if (context.user && context.user.userPrincipalName) {
-                    setLoginHint(context.user.userPrincipalName);
-                    setStatusMessage("Ready to sign in.");
-                } else {
-                    setAuthError("Could not retrieve user information from Teams.");
-                }
-            } catch (error) {
-                console.error("Initialization error:", error);
-                setAuthError("Failed to initialize the application within Teams.");
-            }
-        };
-        initialize();
-    }, []);
+    const [statusMessage, setStatusMessage] = useState("Ready to sign in.");
+    const [authError, setAuthError] = useState(null);
 
     const handleLogin = () => {
-        if (!loginHint) {
-            setAuthError("Cannot start login without user information from Teams.");
-            return;
-        }
         setAuthError(null);
-
-        teamsAuth.authenticate({
-            url: `${window.location.origin}/auth.html?loginHint=${encodeURIComponent(loginHint)}`,
-            width: 600,
-            height: 535,
-        }).then(() => {
-            window.location.reload();
-        }).catch((reason) => {
-            console.error("Login failed: " + reason);
-            setAuthError(`Login failed: ${reason}. Please close this tab and try again.`);
+        instance.loginRedirect(loginRequest).catch(e => {
+            console.error("Login failed:", e);
+            setAuthError("Login failed. Please try again.");
         });
     };
 
@@ -58,10 +24,9 @@ function Login() {
             <p className="mb-8 text-gray-400">{statusMessage}</p>
             <button
                 onClick={handleLogin}
-                disabled={!loginHint}
-                className="bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed"
+                className="bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 transition-colors"
             >
-                {loginHint ? "Sign In with Microsoft Teams" : "Initializing..."}
+                Sign In with Microsoft
             </button>
             {authError && (
                  <div className="mt-4 p-3 bg-red-800 border border-red-600 rounded-md text-sm flex items-center">
@@ -171,9 +136,6 @@ function AuthenticatedApp() {
 
     return <MainInterface user={accounts[0]} initialMode={modeSelected} onModeChange={handleModeSelect} />;
 }
-
-// --- NO CHANGES ARE NEEDED FOR THE FOLLOWING COMPONENTS ---
-// (MainInterface, ChatInterface, ModeSelection, ModeCard, NavButton)
 
 function MainInterface({ user, initialMode, onModeChange }) {
     const [currentMode, setCurrentMode] = useState(initialMode);
@@ -363,4 +325,3 @@ const NavButton = ({ icon, label, active, onClick, mode }) => {
         </button>
     );
 };
-
